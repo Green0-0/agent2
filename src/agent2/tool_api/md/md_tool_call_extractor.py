@@ -1,0 +1,150 @@
+import re
+from typing import List, Dict, Tuple
+from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor, ToolError
+
+class MDToolCallExtractor(ToolCallExtractor):
+    """
+    Extracts Markdown tool calls from text responses.
+    """
+    def __init__(self, tool_start: str = "# Tool Use", tool_end: str = "# Tool End"):
+        self.tool_start = tool_start
+        self.tool_end = tool_end
+
+    def extract(self, response_str: str) -> Tuple[str, List[Dict], List[ToolError]]:
+        """
+        Extracts tool calls from the response string.
+        
+        Args:
+            response_str (str): The raw response from the model.
+            
+        Returns:
+            Tuple[str, List[Dict], List[ToolError]]: 
+                - The response text with tool calls removed.
+                - A list of extracted tool call dictionaries.
+                - A list of errors encountered during extraction.
+        """
+        tool_calls = []
+        errors = []
+        
+        # Escape tags for regex
+        start_tag_esc = re.escape(self.tool_start)
+        end_tag_esc = re.escape(self.tool_end)
+        
+        # Pattern to find tool call blocks
+        pattern = f"{start_tag_esc}(.*?){end_tag_esc}"
+        
+        matches = list(re.finditer(pattern, response_str, re.DOTALL))
+        
+        if not matches:
+            return response_str, [], []
+            
+        cleaned_response = ""
+        last_pos = 0
+        
+        for match in matches:
+            cleaned_response += response_str[last_pos:match.start()]
+            last_pos = match.end()
+            
+            content = match.group(1).strip()
+            if not content:
+                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+                continue
+                
+            try:
+                tool_call = self._parse_single_call(content)
+                tool_calls.append(tool_call)
+            except ValueError:
+                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+            except KeyError:
+                errors.append(ToolError.TOOL_ARGUMENTS_MISMATCH)
+            except Exception:
+                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+                
+        cleaned_response += response_str[last_pos:]
+        
+        return cleaned_response.strip(), tool_calls, errors
+
+    def _parse_single_call(self, input_str: str) -> Dict:
+        """
+        Parses the content inside a tool call block.
+        """
+        def parse_value(s: str):
+            stripped = s.strip()
+            if stripped.lower() in ("true", "false"):
+                return stripped.lower() == "true"
+            try:
+                return int(stripped)
+            except ValueError:
+                try:
+                    return float(stripped)
+                except ValueError:
+                    return stripped
+
+        lines = [line for line in input_str.split('\n')]
+        # Filter out empty lines? Maybe not, multiline strings might have empty lines.
+        # But the original logic filtered empty lines at the start?
+        # Let's keep all lines but skip empty ones at the start if needed.
+        
+        if not lines:
+            raise ValueError("Empty tool call content")
+
+        # Parse tool name
+        # Find first non-empty line
+        first_line_idx = 0
+        while first_line_idx < len(lines) and not lines[first_line_idx].strip():
+            first_line_idx += 1
+            
+        if first_line_idx >= len(lines):
+            raise ValueError("Empty tool call content")
+            
+        if not lines[first_line_idx].startswith('## Name: '):
+            raise KeyError("First line must be '## Name: [tool_name]'")
+            
+        name = lines[first_line_idx][len('## Name: '):].strip()
+        result = {"name": name, "arguments": {}}
+
+        current_param = None
+        current_value = []
+
+        for line in lines[first_line_idx + 1:]:
+            if line.startswith('### '):
+                if current_param is not None:
+                    # Save the previous parameter
+                    value_str = '\n'.join(current_value).strip()
+                    parsed_value = parse_value(value_str)
+                    result['arguments'][current_param] = parsed_value
+                    current_value = []
+                
+                # Parse new parameter
+                param_line = line[len('### '):]
+                if ':' not in param_line:
+                    # Maybe it's a malformed line, or just '### param:' with empty value on this line
+                    if param_line.strip().endswith(':'):
+                         param_name = param_line.strip()[:-1]
+                         param_value = ""
+                    else:
+                        raise ValueError(f"Parameter line missing colon: {line}")
+                else:
+                    param_name, param_value = param_line.split(':', 1)
+                
+                current_param = param_name.strip()
+                current_value.append(param_value) # Don't strip yet, might be multiline
+                
+                # Check for duplicate parameters
+                if current_param in result['arguments']:
+                    raise ValueError(f"Duplicate parameter: {current_param}")
+            else:
+                if current_param is None:
+                    # Ignore empty lines before first param?
+                    if not line.strip():
+                        continue
+                    raise ValueError(f"Line '{line}' is not part of any parameter")
+                current_value.append(line)
+        
+        # Add the last parameter
+        if current_param is not None:
+            value_str = '\n'.join(current_value).strip()
+            parsed_value = parse_value(value_str)
+            result['arguments'][current_param] = parsed_value
+
+        return result
