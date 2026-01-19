@@ -1,4 +1,5 @@
 import re
+import textwrap
 from typing import List, Dict, Tuple
 from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor, ToolError
 
@@ -45,11 +46,14 @@ class MDToolCallExtractor(ToolCallExtractor):
             cleaned_response += response_str[last_pos:match.start()]
             last_pos = match.end()
             
-            content = match.group(1).strip()
-            if not content:
+            content = match.group(1)
+            if not content.strip():
                 errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
                 continue
                 
+            # Dedent the content to handle indentation
+            content = textwrap.dedent(content).strip()
+            
             try:
                 tool_call = self._parse_single_call(content)
                 tool_calls.append(tool_call)

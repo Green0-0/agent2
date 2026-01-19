@@ -19,4 +19,15 @@ class JSONToolCallBuilder(ToolCallBuilder):
         Returns:
             str: The JSON formatted tool call string.
         """
-        return json.dumps(tool_call_json, indent=self.indent)
+        simplified_calls = []
+        for call in tool_call_json:
+            func = call["function"]
+            name = func["name"]
+            arguments = json.loads(func["arguments"])
+                
+            simplified_calls.append({
+                "name": name,
+                "arguments": arguments
+            })
+            
+        return json.dumps(simplified_calls, indent=self.indent)

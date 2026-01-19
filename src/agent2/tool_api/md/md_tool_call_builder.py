@@ -1,3 +1,4 @@
+import json
 from typing import List, Dict
 from agent2.tool_api.abc.tool_call_builder import ToolCallBuilder
 
@@ -21,8 +22,9 @@ class MDToolCallBuilder(ToolCallBuilder):
         """
         md_calls = []
         for call in tool_call_json:
-            name = call.get("name", "")
-            arguments = call.get("arguments", {})
+            func = call["function"]
+            name = func["name"]
+            arguments = json.loads(func["arguments"])
             
             lines = [f"## Name: {name}"]
             

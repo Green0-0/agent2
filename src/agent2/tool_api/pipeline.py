@@ -83,6 +83,6 @@ class StandardToolPipeline(ToolPipeline):
         return new_json
     
     def extract_response(self, response_str: str) -> Tuple[Dict, List]:
-        extracted_response = self.tool_call_extractor.extract_response(response_str)
+        extracted_response = self.tool_call_extractor.extract(response_str)
         openai_message = {"role": "assistant", "content": extracted_response[0], "tool_calls": extracted_response[1], "finish_reason": "stop" if extracted_response[1] == [] else "tool"}
         return openai_message, extracted_response[2]

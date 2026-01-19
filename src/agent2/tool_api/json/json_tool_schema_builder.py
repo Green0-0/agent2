@@ -19,5 +19,4 @@ class JSONToolSchemaBuilder(ToolSchemaBuilder):
         Returns:
             str: The JSON formatted schema string.
         """
-        # We simply serialize the list of schemas to a formatted JSON string
         return json.dumps(tool_schema_json, indent=self.indent)

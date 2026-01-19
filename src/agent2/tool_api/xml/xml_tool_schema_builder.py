@@ -27,8 +27,8 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
             else:
                 func = tool
             
-            name = func.get("name", "")
-            description = func.get("description", "")
+            name = func["name"]
+            description = func.get("description", "No description specified.")
             parameters = func.get("parameters", {})
             properties = parameters.get("properties", {})
             required = parameters.get("required", [])
