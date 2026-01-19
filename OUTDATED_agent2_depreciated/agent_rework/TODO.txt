@@ -1,0 +1,1 @@
+- Add manual element renaming in case of repeated IDs, ie: class.make_dog.thing, class.make_dog 2.thing ... etc
