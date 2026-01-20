@@ -5,9 +5,12 @@ from enum import Enum
 class ToolError(Enum):
     TOOL_START_MISSING = 1
     TOOL_END_MISSING = 2
-    TOOL_NOT_FOUND = 3
-    TOOL_SYNTAX_MISMATCH = 4
-    TOOL_ARGUMENTS_MISMATCH = 5
+    TOOL_MALFORMATTED = 3
+    TOOL_DUPLICATE_ARGUMENT = 4
+
+class DuplicateArgumentError(Exception):
+    """Raised when a tool call contains duplicate arguments."""
+    pass
 
 class ToolCallExtractor(ABC):
     """The ToolCallExtractor parses the message and tool call from the response string, along with errors, if applicable."""

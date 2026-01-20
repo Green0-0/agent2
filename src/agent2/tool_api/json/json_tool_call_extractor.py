@@ -1,14 +1,14 @@
 import json
 import re
 from typing import List, Dict, Tuple, Optional
-from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor, ToolError
+from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor, ToolError, DuplicateArgumentError
 
 class JSONToolCallExtractor(ToolCallExtractor):
     """
     Extracts JSON tool calls from text responses.
     Supports extracting from markdown code blocks or raw JSON.
     """
-    def __init__(self, tool_start: Optional[str] = None, tool_end: Optional[str] = None):
+    def __init__(self, tool_start: str = "```json", tool_end: str = "```"):
         self.tool_start = tool_start
         self.tool_end = tool_end
 
@@ -25,108 +25,79 @@ class JSONToolCallExtractor(ToolCallExtractor):
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """
+        # Check for mismatched tags
+        num_starts = response_str.count(self.tool_start)
+        num_ends = response_str.count(self.tool_end)
+        
+        # Adjust for overlapping tags (e.g. ```json contains ```)
+        if num_starts > 0 and self.tool_end in self.tool_start:
+            num_ends -= num_starts * self.tool_start.count(self.tool_end)
+            
+        if num_starts > num_ends:
+            return response_str, [], [ToolError.TOOL_END_MISSING]
+        if num_ends > num_starts:
+            return response_str, [], [ToolError.TOOL_START_MISSING]
+
         tool_calls = []
         errors = []
-        cleaned_response = response_str
-        
-        json_blocks = []
-        
-        # Strategy 1: If tool_start/end are defined, use them
-        if self.tool_start and self.tool_end:
-            pattern = re.escape(self.tool_start) + r"(.*?)" + re.escape(self.tool_end)
-            matches = list(re.finditer(pattern, response_str, re.DOTALL))
-            
-            if matches:
-                cleaned_response = ""
-                last_pos = 0
-                for match in matches:
-                    cleaned_response += response_str[last_pos:match.start()]
-                    last_pos = match.end()
-                    json_blocks.append(match.group(1).strip())
-                cleaned_response += response_str[last_pos:]
-        
-        # Strategy 2: Look for markdown code blocks ```json ... ``` or ``` ... ```
-        if not json_blocks:
-            code_block_pattern = r"```(?:json)?\s*([\s\S]*?)\s*```"
-            matches = list(re.finditer(code_block_pattern, response_str, re.DOTALL))
-            
-            if matches:
-                # We only extract if we find valid JSON in blocks
-                # But we need to be careful not to remove non-tool code blocks if they exist.
-                # For now, let's assume if we find JSON-parsable blocks, they are tools.
-                
-                # To properly handle mixed content, we might need a more complex approach.
-                # Here we will try to parse each block.
-                
-                temp_cleaned = ""
-                last_pos = 0
-                found_valid_json = False
-                
-                for match in matches:
-                    content = match.group(1).strip()
-                    try:
-                        parsed = json.loads(content)
-                        # Heuristic: It's a tool call if it's a list of dicts or a dict with 'name'/'arguments'
-                        is_tool = False
-                        if isinstance(parsed, list):
-                            if all(isinstance(x, dict) and "name" in x for x in parsed):
-                                is_tool = True
-                        elif isinstance(parsed, dict):
-                            if "name" in parsed:
-                                is_tool = True
-                        
-                        if is_tool:
-                            json_blocks.append(content)
-                            temp_cleaned += response_str[last_pos:match.start()]
-                            last_pos = match.end()
-                            found_valid_json = True
-                        else:
-                            # Not a tool call, keep it
-                            temp_cleaned += response_str[last_pos:match.end()]
-                            last_pos = match.end()
-                    except json.JSONDecodeError:
-                        # Not JSON, keep it
-                        temp_cleaned += response_str[last_pos:match.end()]
-                        last_pos = match.end()
-                
-                if found_valid_json:
-                    temp_cleaned += response_str[last_pos:]
-                    cleaned_response = temp_cleaned
 
-        # Strategy 3: If still no blocks, try to find a JSON list or object in the text
-        # This is risky as it might match random text, so we only do it if we haven't found anything yet
-        # and if the text looks like it starts/ends with JSON structure.
-        if not json_blocks and not errors:
-            stripped = response_str.strip()
-            if (stripped.startswith("[") and stripped.endswith("]")) or \
-               (stripped.startswith("{") and stripped.endswith("}")):
-                try:
-                    # Check if it parses
-                    json.loads(stripped)
-                    json_blocks.append(stripped)
-                    cleaned_response = "" # It was all JSON
-                except json.JSONDecodeError:
-                    pass
+        # Escape tags for regex
+        start_tag_esc = re.escape(self.tool_start)
+        end_tag_esc = re.escape(self.tool_end)
+        
+        # Pattern to find tool call blocks
+        pattern = f"{start_tag_esc}(.*?){end_tag_esc}"
+        
+        matches = list(re.finditer(pattern, response_str, re.DOTALL))
+        
+        if not matches:
+            return response_str, [], []
 
-        # Process extracted blocks
-        for block in json_blocks:
+        # Identify contiguous matches
+        contiguous_matches = []
+        if matches:
+            contiguous_matches.append(matches[0])
+            for i in range(1, len(matches)):
+                prev_match = matches[i-1]
+                curr_match = matches[i]
+                intervening_text = response_str[prev_match.end():curr_match.start()]
+                if intervening_text.strip():
+                    # Found non-whitespace text between tool calls, stop here
+                    break
+                contiguous_matches.append(curr_match)
+        
+        # The message is everything before the first tool call
+        cleaned_response = response_str[:contiguous_matches[0].start()].strip()
+        
+        def duplicate_key_check(ordered_pairs):
+            d = {}
+            for k, v in ordered_pairs:
+                if k in d:
+                    raise DuplicateArgumentError(f"Duplicate key: {k}")
+                d[k] = v
+            return d
+
+        for match in contiguous_matches:
+            content = match.group(1).strip()
             try:
-                parsed = json.loads(block)
+                parsed = json.loads(content, object_pairs_hook=duplicate_key_check)
+                
                 if isinstance(parsed, list):
                     for item in parsed:
                         if isinstance(item, dict):
                             tool_calls.append(item)
                         else:
-                            errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+                            errors.append(ToolError.TOOL_MALFORMATTED)
                 elif isinstance(parsed, dict):
                     tool_calls.append(parsed)
                 else:
-                    errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
-            except json.JSONDecodeError:
-                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+                    errors.append(ToolError.TOOL_MALFORMATTED)
+            except DuplicateArgumentError:
+                errors.append(ToolError.TOOL_DUPLICATE_ARGUMENT)
+            except (json.JSONDecodeError, Exception):
+                errors.append(ToolError.TOOL_MALFORMATTED)
         
-        if not tool_calls and not errors and not json_blocks:
-            # No tools found
-            pass
-            
-        return cleaned_response.strip(), tool_calls, errors
+        if errors:
+            return response_str, [], errors
+                
+        return cleaned_response, tool_calls, []

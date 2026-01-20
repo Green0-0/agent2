@@ -1,6 +1,7 @@
 from typing import List, Dict, Tuple
 import re
-from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor, ToolError
+import ast
+from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor, ToolError, DuplicateArgumentError
 
 class XMLToolCallExtractor(ToolCallExtractor):
     """
@@ -23,6 +24,19 @@ class XMLToolCallExtractor(ToolCallExtractor):
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """
+        # Check for mismatched tags
+        num_starts = response_str.count(self.tool_start)
+        num_ends = response_str.count(self.tool_end)
+        
+        # Adjust for overlapping tags (e.g. ```json contains ```)
+        if num_starts > 0 and self.tool_end in self.tool_start:
+            num_ends -= num_starts * self.tool_start.count(self.tool_end)
+            
+        if num_starts > num_ends:
+            return response_str, [], [ToolError.TOOL_END_MISSING]
+        if num_ends > num_starts:
+            return response_str, [], [ToolError.TOOL_START_MISSING]
+
         tool_calls = []
         errors = []
         
@@ -39,33 +53,40 @@ class XMLToolCallExtractor(ToolCallExtractor):
             # No tool calls found
             return response_str, [], []
             
-        cleaned_response = ""
-        last_pos = 0
+        # Identify contiguous matches
+        contiguous_matches = []
+        if matches:
+            contiguous_matches.append(matches[0])
+            for i in range(1, len(matches)):
+                prev_match = matches[i-1]
+                curr_match = matches[i]
+                intervening_text = response_str[prev_match.end():curr_match.start()]
+                if intervening_text.strip():
+                    # Found non-whitespace text between tool calls, stop here
+                    break
+                contiguous_matches.append(curr_match)
         
-        for match in matches:
-            # Append text before this match
-            cleaned_response += response_str[last_pos:match.start()]
-            last_pos = match.end()
-            
+        # The message is everything before the first tool call
+        cleaned_response = response_str[:contiguous_matches[0].start()].strip()
+        
+        for match in contiguous_matches:
             content = match.group(1).strip()
             if not content:
-                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+                errors.append(ToolError.TOOL_MALFORMATTED)
                 continue
                 
             try:
                 tool_call = self._parse_single_call(content)
                 tool_calls.append(tool_call)
-            except ValueError:
-                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
-            except KeyError:
-                errors.append(ToolError.TOOL_ARGUMENTS_MISMATCH)
-            except Exception:
-                errors.append(ToolError.TOOL_SYNTAX_MISMATCH)
+            except DuplicateArgumentError:
+                errors.append(ToolError.TOOL_DUPLICATE_ARGUMENT)
+            except (ValueError, KeyError, Exception):
+                errors.append(ToolError.TOOL_MALFORMATTED)
                 
-        # Append remaining text
-        cleaned_response += response_str[last_pos:]
-        
-        return cleaned_response.strip(), tool_calls, errors
+        if errors:
+            return response_str, [], errors
+
+        return cleaned_response, tool_calls, []
 
     def _parse_single_call(self, input_str: str) -> Dict:
         """
@@ -86,14 +107,21 @@ class XMLToolCallExtractor(ToolCallExtractor):
 
         def parse_value(s: str):
             s = s.strip()
+            if s.lower() in ("true", "false"):
+                return s.lower() == "true"
             try:
                 return int(s)
             except ValueError:
                 try:
                     return float(s)
                 except ValueError:
-                    if s.lower() in ("true", "false"):
-                        return s.lower() == "true"
+                    # Try to parse as a complex structure (list, dict)
+                    try:
+                        val = ast.literal_eval(s)
+                        if isinstance(val, (list, dict)):
+                            return val
+                    except (ValueError, SyntaxError):
+                        pass
                     return s
 
         # Find all XML elements with their content
@@ -118,7 +146,7 @@ class XMLToolCallExtractor(ToolCallExtractor):
         seen_tags = set()
         for tag, content in elements[1:]:
             if tag in seen_tags:
-                raise ValueError(f"Duplicate argument '{tag}'")
+                raise DuplicateArgumentError(f"Duplicate argument '{tag}'")
             seen_tags.add(tag)
             
             cleaned = parse_value(unescape_xml(content))

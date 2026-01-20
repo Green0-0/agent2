@@ -6,8 +6,10 @@ class JSONToolCallBuilder(ToolCallBuilder):
     """
     Builds JSON strings for tool calls.
     """
-    def __init__(self, indent: int = 4):
+    def __init__(self, indent: int = 4, tool_start: str = "```json", tool_end: str = "```"):
         self.indent = indent
+        self.tool_start = tool_start
+        self.tool_end = tool_end
 
     def build(self, tool_call_json: List[Dict]) -> str:
         """
@@ -30,4 +32,5 @@ class JSONToolCallBuilder(ToolCallBuilder):
                 "arguments": arguments
             })
             
-        return json.dumps(simplified_calls, indent=self.indent)
+        json_str = json.dumps(simplified_calls, indent=self.indent)
+        return f"{self.tool_start}\n{json_str}\n{self.tool_end}"

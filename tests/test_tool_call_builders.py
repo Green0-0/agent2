@@ -106,7 +106,9 @@ def test_standard_tool_call_generation():
     assert "</tool_call>" in xml_out
 
     # JSON Assertions
-    loaded_json = json.loads(json_out)
+    # Strip markdown delimiters for parsing
+    json_content = json_out.replace("```json\n", "").replace("\n```", "")
+    loaded_json = json.loads(json_content)
     # The builder should simplify the OpenAI format to a list of {name, arguments}
     assert len(loaded_json) == 1
     assert loaded_json[0]["name"] == "get_weather"
@@ -138,7 +140,8 @@ def test_multiple_tool_calls():
     assert "<name>search_web</name>" in xml_out
 
     # JSON Assertions
-    loaded_json = json.loads(json_out)
+    json_content = json_out.replace("```json\n", "").replace("\n```", "")
+    loaded_json = json.loads(json_content)
     assert len(loaded_json) == 2
     assert loaded_json[0]["name"] == "get_weather"
     assert loaded_json[1]["name"] == "search_web"
@@ -170,7 +173,8 @@ def test_complex_arguments():
     assert "<tags>['a', 'b', 'c']</tags>" in xml_out
 
     # JSON Assertions
-    loaded_json = json.loads(json_out)
+    json_content = json_out.replace("```json\n", "").replace("\n```", "")
+    loaded_json = json.loads(json_content)
     assert loaded_json[0]["arguments"]["count"] == 42
     assert loaded_json[0]["arguments"]["is_active"] is True
 
@@ -194,7 +198,9 @@ def test_edge_cases():
     empty_out_md = md_builder.build([])
 
     assert empty_out_xml == ""
-    assert empty_out_json == "[]"
+    # JSON builder now wraps empty list in delimiters too
+    assert "```json" in empty_out_json
+    assert "[]" in empty_out_json
     assert empty_out_md == ""
 
     # 2. No Arguments
