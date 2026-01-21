@@ -442,3 +442,138 @@ def hello():
         log_test_result("MD - Duplicate Args", response, result)
         
         assert result[2] == [ToolError.TOOL_DUPLICATE_ARGUMENT]
+
+from agent2.tool_api.fake_codeact.fake_codeact_tool_call_extractor import FakeCodeActToolCallExtractor
+
+class TestFakeCodeActToolCallExtractor:
+    def test_basic_extraction(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+Some text
+<code>
+tool_name(arg1="value1", arg2=123)
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Basic Extraction", response, result)
+        
+        text, tools, errors = result
+        assert text == "Some text"
+        assert len(tools) == 1
+        assert tools[0]["name"] == "tool_name"
+        assert tools[0]["arguments"] == {"arg1": "value1", "arg2": 123}
+        assert not errors
+
+    def test_multiple_calls(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+<code>
+tool1(x=1)
+tool2(y=2)
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Multiple Calls", response, result)
+        
+        text, tools, errors = result
+        assert len(tools) == 2
+        assert tools[0]["name"] == "tool1"
+        assert tools[0]["arguments"] == {"x": 1}
+        assert tools[1]["name"] == "tool2"
+        assert tools[1]["arguments"] == {"y": 2}
+
+    def test_markdown_wrapper(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+<code>
+```python
+tool(a=1)
+```
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Markdown Wrapper", response, result)
+        
+        text, tools, errors = result
+        assert len(tools) == 1
+        assert tools[0]["name"] == "tool"
+        assert tools[0]["arguments"] == {"a": 1}
+
+    def test_indentation_allowed(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+<code>
+    tool(a=1)
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Indentation Allowed", response, result)
+        
+        text, tools, errors = result
+        assert not errors
+        assert len(tools) == 1
+        assert tools[0]["name"] == "tool"
+        assert tools[0]["arguments"] == {"a": 1}
+
+    def test_non_call_code(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+<code>
+x = 1
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Non-Call Code", response, result)
+        
+        assert result[2] == [ToolError.TOOL_MALFORMATTED]
+
+    def test_positional_args_error(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+<code>
+tool(1, 2)
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Positional Args Error", response, result)
+        
+        assert result[2] == [ToolError.TOOL_MALFORMATTED]
+
+    def test_mismatched_tags(self):
+        extractor = FakeCodeActToolCallExtractor()
+        
+        # Missing end tag
+        response = "<code>tool()<code>"
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Missing End Tag", response, result)
+        assert result[2] == [ToolError.TOOL_END_MISSING]
+
+        # Missing start tag
+        response = "</code>"
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Missing Start Tag", response, result)
+        assert result[2] == [ToolError.TOOL_START_MISSING]
+        
+        # Extra tags but valid block exists -> Should be valid now
+        response = "<code>tool()</code><code>"
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Extra Tags Valid", response, result)
+        assert not result[2]
+        assert len(result[1]) == 1
+        assert result[1][0]["name"] == "tool"
+
+    def test_markdown_same_line_end(self):
+        extractor = FakeCodeActToolCallExtractor()
+        response = """
+<code>
+```python
+tool(a=1)```
+</code>
+"""
+        result = extractor.extract(response)
+        log_test_result("CodeAct - Markdown Same Line End", response, result)
+        
+        text, tools, errors = result
+        assert len(tools) == 1
+        assert tools[0]["name"] == "tool"
+        assert tools[0]["arguments"] == {"a": 1}

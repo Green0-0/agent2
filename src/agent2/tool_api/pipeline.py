@@ -60,7 +60,8 @@ class StandardToolPipeline(ToolPipeline):
 
         # Parse schema, replace the schema key with the schema string
         if "tools" in new_json:
-            schema_str = self.tool_schema_builder.build(new_json["tools"])
+            schema_list = self.tool_schema_builder.build(new_json["tools"])
+            schema_str = "\n\n".join(schema_list)
             if self.replace_schema_all:
                 for message in new_json["messages"]:
                     if "content" in message and message["content"] != "" and isinstance(message["content"], str):

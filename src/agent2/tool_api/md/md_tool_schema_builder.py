@@ -5,11 +5,7 @@ class MDToolSchemaBuilder(ToolSchemaBuilder):
     """
     Builds Markdown schema definitions for tools.
     """
-    def __init__(self, tool_start: str = "# Tool Use", tool_end: str = "# Tool End"):
-        self.tool_start = tool_start
-        self.tool_end = tool_end
-
-    def build(self, tool_schema_json: List[Dict]) -> str:
+    def build(self, tool_schema_json: List[Dict]) -> List[str]:
         """
         Builds a tool schema string from a list of tool schema dictionaries.
         
@@ -17,7 +13,7 @@ class MDToolSchemaBuilder(ToolSchemaBuilder):
             tool_schema_json (List[Dict]): List of tool definitions.
             
         Returns:
-            str: The Markdown formatted schema string.
+            List[str]: The list of Markdown formatted schema strings.
         """
         schemas = []
         for tool in tool_schema_json:
@@ -51,7 +47,7 @@ class MDToolSchemaBuilder(ToolSchemaBuilder):
                 content = f"### {prop_name} ({prop_type}, {req_str}): {prop_desc}"
                 lines.append(content)
             
-            schema = f"{self.tool_start}\n" + "\n".join(lines) + f"\n{self.tool_end}"
+            schema = "\n".join(lines)
             schemas.append(schema)
             
-        return "\n\n".join(schemas)
+        return schemas

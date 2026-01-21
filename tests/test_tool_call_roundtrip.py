@@ -8,6 +8,9 @@ from agent2.tool_api.json.json_tool_call_extractor import JSONToolCallExtractor
 from agent2.tool_api.md.md_tool_call_builder import MDToolCallBuilder
 from agent2.tool_api.md.md_tool_call_extractor import MDToolCallExtractor
 
+from agent2.tool_api.fake_codeact.fake_codeact_tool_call_builder import FakeCodeActToolCallBuilder
+from agent2.tool_api.fake_codeact.fake_codeact_tool_call_extractor import FakeCodeActToolCallExtractor
+
 def normalize_whitespace(s: str) -> str:
     """Normalize whitespace for comparison."""
     return "\n".join([line.strip() for line in s.strip().splitlines() if line.strip()])
@@ -114,6 +117,21 @@ def test_md_roundtrip():
     ]
     run_roundtrip_test(MDToolCallBuilder, MDToolCallExtractor, tool_calls, "Markdown")
 
+def test_codeact_roundtrip():
+    tool_calls = [
+        {
+            "type": "function",
+            "function": {
+                "name": "python_tool",
+                "arguments": json.dumps({
+                    "code": "print('hello')",
+                    "execution_id": 123
+                })
+            }
+        }
+    ]
+    run_roundtrip_test(FakeCodeActToolCallBuilder, FakeCodeActToolCallExtractor, tool_calls, "CodeAct")
+
 def test_complex_types_roundtrip():
     # Test with lists and nested structures if supported
     tool_calls = [
@@ -137,6 +155,9 @@ def test_complex_types_roundtrip():
     
     # MD uses str() and might be tricky with newlines in dicts, but let's see
     run_roundtrip_test(MDToolCallBuilder, MDToolCallExtractor, tool_calls, "Markdown Complex")
+
+    # CodeAct supports complex types via python syntax
+    run_roundtrip_test(FakeCodeActToolCallBuilder, FakeCodeActToolCallExtractor, tool_calls, "CodeAct Complex")
 
 if __name__ == "__main__":
     pytest.main(["-v", __file__])

@@ -5,11 +5,7 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
     """
     Builds XML schema definitions for tools.
     """
-    def __init__(self, tool_start: str = "<tool_code>", tool_end: str = "</tool_code>"):
-        self.tool_start = tool_start
-        self.tool_end = tool_end
-
-    def build(self, tool_schema_json: List[Dict]) -> str:
+    def build(self, tool_schema_json: List[Dict]) -> List[str]:
         """
         Builds a tool schema string from a list of tool schema dictionaries.
         
@@ -17,7 +13,7 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
             tool_schema_json (List[Dict]): List of tool definitions (OpenAI function format).
             
         Returns:
-            str: The XML formatted schema string.
+            List[str]: The list of XML formatted schema strings.
         """
         schemas = []
         for tool in tool_schema_json:
@@ -53,7 +49,7 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
                 
                 xml_lines.append(f"<{prop_name}>{content}</{prop_name}>")
             
-            schema = f"{self.tool_start}\n" + "\n".join(xml_lines) + f"\n{self.tool_end}"
+            schema = "\n".join(xml_lines)
             schemas.append(schema)
             
-        return "\n\n".join(schemas)
+        return schemas

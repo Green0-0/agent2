@@ -9,7 +9,7 @@ class JSONToolSchemaBuilder(ToolSchemaBuilder):
     def __init__(self, indent: int = 4):
         self.indent = indent
 
-    def build(self, tool_schema_json: List[Dict]) -> str:
+    def build(self, tool_schema_json: List[Dict]) -> List[str]:
         """
         Builds a tool schema string from a list of tool schema dictionaries.
         
@@ -17,6 +17,6 @@ class JSONToolSchemaBuilder(ToolSchemaBuilder):
             tool_schema_json (List[Dict]): List of tool definitions.
             
         Returns:
-            str: The JSON formatted schema string.
+            List[str]: The list of JSON formatted schema strings.
         """
-        return json.dumps(tool_schema_json, indent=self.indent)
+        return [json.dumps(tool, indent=self.indent) for tool in tool_schema_json]
