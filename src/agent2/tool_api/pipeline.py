@@ -1,4 +1,6 @@
 import copy
+import json
+import uuid
 from typing import List, Dict, Tuple
 from agent2.tool_api.abc.tool_pipeline import ToolPipeline
 from agent2.tool_api.abc.tool_call_extractor import ToolCallExtractor
@@ -85,5 +87,19 @@ class StandardToolPipeline(ToolPipeline):
     
     def extract_response(self, response_str: str) -> Tuple[Dict, List]:
         extracted_response = self.tool_call_extractor.extract(response_str)
-        openai_message = {"role": "assistant", "content": extracted_response[0], "tool_calls": extracted_response[1], "finish_reason": "stop" if extracted_response[1] == [] else "tool"}
+        
+        # Convert extracted tool calls to OpenAI format
+        openai_tool_calls = []
+        for tool_call in extracted_response[1]:
+            # Convert from internal format
+            openai_tool_calls.append({
+                "id": "call_" + str(uuid.uuid4())[:8],
+                "type": "function",
+                "function": {
+                    "name": tool_call["name"],
+                    "arguments": json.dumps(tool_call["arguments"])
+                }
+            })
+
+        openai_message = {"role": "assistant", "content": extracted_response[0], "tool_calls": openai_tool_calls, "finish_reason": "stop" if openai_tool_calls == [] else "tool"}
         return openai_message, extracted_response[2]
