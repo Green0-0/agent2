@@ -78,14 +78,10 @@ class ToolValidator:
                 errors.append(f"Missing required argument: '{req_arg}'.")
         
         # Check for extra arguments
-        # Note: OpenAI functions can be strict or not, but usually extra args are hallucinated
         for arg_name in arguments:
             if arg_name not in properties:
                 errors.append(f"Unknown argument: '{arg_name}'.")
             else:
-                # Optional: Type checking could go here, but might be overkill for this request
-                # unless "other possible errors" implies type validation.
-                # Let's do basic type checking if possible.
                 expected_type = properties[arg_name].get("type")
                 value = arguments[arg_name]
                 
@@ -102,7 +98,6 @@ class ToolValidator:
                 elif expected_type == "object" and not isinstance(value, dict):
                     errors.append(f"Argument '{arg_name}' expected type 'object', got '{type(value).__name__}'.")
                     
-                # Enum check
                 enum_values = properties[arg_name].get("enum")
                 if enum_values and value not in enum_values:
                     errors.append(f"Argument '{arg_name}' value '{value}' is not valid. Allowed: {enum_values}.")

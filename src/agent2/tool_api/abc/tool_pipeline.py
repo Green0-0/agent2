@@ -42,7 +42,7 @@ class ToolPipeline(ABC):
         """
         pass
 
-        def _get_schema_string(self, tools: List[Dict]) -> str:
+    def _get_schema_string(self, tools: List[Dict]) -> str:
         """
         Builds the tool schema string from the list of tools, wrapping each schema in the tool call builder's start/end tags.
 
