@@ -9,14 +9,6 @@ from agent2.tool_api.abc.tool_response_builder import ToolResponseBuilder
 from agent2.tool_api.abc.tool_schema_builder import ToolSchemaBuilder
 
 class StandardToolPipeline(ToolPipeline):
-    def __init__(self, tool_call_extractor: ToolCallExtractor, tool_call_builder: ToolCallBuilder, tool_response_builder: ToolResponseBuilder, tool_schema_builder: ToolSchemaBuilder, schema_key: str = "{{llm_tools_list}}", replace_schema_all: bool = True):
-        self.tool_call_extractor = tool_call_extractor
-        self.tool_call_builder = tool_call_builder
-        self.tool_response_builder = tool_response_builder
-        self.tool_schema_builder = tool_schema_builder
-        self.schema_key = schema_key
-        self.replace_schema_all = replace_schema_all
-    
     def convert_openai(self, openai_json: Dict) -> Dict:
         new_json = copy.deepcopy(openai_json)
         if "tool_choice" in new_json:
@@ -62,8 +54,7 @@ class StandardToolPipeline(ToolPipeline):
 
         # Parse schema, replace the schema key with the schema string
         if "tools" in new_json:
-            schema_list = self.tool_schema_builder.build(new_json["tools"])
-            schema_str = "\n\n".join(schema_list)
+            schema_str = self._get_schema_string(new_json["tools"])
             if self.replace_schema_all:
                 for message in new_json["messages"]:
                     if "content" in message and message["content"] != "" and isinstance(message["content"], str):
@@ -88,18 +79,5 @@ class StandardToolPipeline(ToolPipeline):
     def extract_response(self, response_str: str) -> Tuple[Dict, List]:
         extracted_response = self.tool_call_extractor.extract(response_str)
         
-        # Convert extracted tool calls to OpenAI format
-        openai_tool_calls = []
-        for tool_call in extracted_response[1]:
-            # Convert from internal format
-            openai_tool_calls.append({
-                "id": "call_" + str(uuid.uuid4())[:8],
-                "type": "function",
-                "function": {
-                    "name": tool_call["name"],
-                    "arguments": json.dumps(tool_call["arguments"])
-                }
-            })
-
-        openai_message = {"role": "assistant", "content": extracted_response[0], "tool_calls": openai_tool_calls, "finish_reason": "stop" if openai_tool_calls == [] else "tool"}
+        openai_message = self._to_openai_fc(extracted_response[0], extracted_response[1])
         return openai_message, extracted_response[2]
