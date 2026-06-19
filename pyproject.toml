@@ -8,8 +8,10 @@ version = "0.1.0"
 description = "A basic agent library"
 readme = "README.md"
 license = {text = "Apache-2.0"}
-requires-python = ">=3.8"
-dependencies = []
+requires-python = ">=3.12"
+dependencies = [
+    "tree-sitter-language-pack>=1.9.1",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
