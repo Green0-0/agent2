@@ -1,3 +1,5 @@
+from typing import List
+
 def find_shortest_indentation(text: str) -> int:
     """Calculate the minimum indentation in non-empty lines of text.
     
@@ -77,9 +79,8 @@ def reindent(original_text: str, new_text: str) -> str:
         indent_str = ' ' * base_indent
     
     for line in unindented.split('\n'):
-        if line.strip():  # Only indent lines with actual content
+        if line.strip():
             reindented_lines.append(f"{indent_str}{line}")
         else:
-            # Preserve empty lines and whitespace-only lines
             reindented_lines.append(line)
     return '\n'.join(reindented_lines)

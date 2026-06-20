@@ -1,3 +1,4 @@
+from agent2.code_parser.utils import calculate_new_endpoint
 from typing import Tuple
 from typing import Optional, Dict, Any
 
@@ -33,9 +34,15 @@ class CodeFile:
             The previous CodeState.
         """
         old_state = self.buffer
-        self.tree = self.adapter.ts_language.parser.parse(new_bytes, old_tree)
+        self.tree = self.adapter.parse(new_bytes, old_tree)
         self.buffer = CodeState(new_bytes)
-        self.code_nodes = {s.llm_path: s for s in self.adapter.extract_nodes(self.tree.root_node, self.buffer)}
+        self.code_nodes = {}
+        for s in self.adapter.extract_nodes(self.tree.root_node, self.buffer):
+            self.code_nodes[s.llm_path] = s
+            self.code_nodes[s.path] = s
+            if s.parent_path and s.parent_path in self.code_nodes:
+                parent = self.code_nodes[s.parent_path]
+                object.__setattr__(parent, 'children', parent.children + (s,))
         return old_state
 
     def apply_edit_and_reparse(self, edit: CodeEdit) -> CodeState:
@@ -50,10 +57,10 @@ class CodeFile:
         """
         if not self.buffer or not self.tree:
             raise RuntimeError("Cannot apply edits to an unparsed CodeFile. Call parse_to_bytes first.")
-            
+
         old_bytes = self.buffer.bytes
         
-        new_end_point = self._calculate_new_endpoint(edit.start_point, edit.new_text)
+        new_end_point = calculate_new_endpoint(edit.start_point, edit.new_text)
         
         self.tree.edit(
             start_byte=edit.start_byte,
@@ -67,12 +74,4 @@ class CodeFile:
         new_bytes = old_bytes[:edit.start_byte] + edit.new_text + old_bytes[edit.end_byte:]
         return self.parse_to_bytes(new_bytes, old_tree=self.tree)
 
-    @staticmethod
-    def _calculate_new_endpoint(start_point: Tuple[int, int], new_text: bytes) -> Tuple[int, int]:
-        """Calculates the outgoing (row, col) coordinates for a newly injected text block."""
-        lines = new_text.decode('utf-8').splitlines()
-        if not lines:
-            return start_point
-        if len(lines) == 1:
-            return (start_point[0], start_point[1] + len(new_text))
-        return (start_point[0] + len(lines) - 1, len(lines[-1]))
+    

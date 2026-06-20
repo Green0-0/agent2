@@ -92,6 +92,7 @@ class CodeNode:
         doc_block: The block of the node docstring.
         body_block: The block of the node body.
         parent_path: The path to the parent node.
+        children: A tuple of child CodeNodes.
     """
     name: str
     full_block: CodeBlock
@@ -99,6 +100,7 @@ class CodeNode:
     doc_block: Optional[CodeBlock]
     body_block: Optional[CodeBlock]
     parent_path: Optional[str] = None
+    children: tuple['CodeNode', ...] = field(default_factory=tuple)
 
     @property
     def llm_path(self) -> str:
@@ -109,3 +111,11 @@ class CodeNode:
         line_num = self.full_block.start_point[0] + 1
         base = f"{self.parent_path}.{self.name}" if self.parent_path else self.name
         return f"{base}.{line_num}"
+
+    @property
+    def path(self) -> str:
+        """
+        Generates deterministic lookup paths for the agent without line numbers.
+        Example: 'MyClass.my_function'
+        """
+        return f"{self.parent_path}.{self.name}" if self.parent_path else self.name
