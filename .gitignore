@@ -154,3 +154,5 @@ cython_debug/
 .vscode/
 *.swp
 *.swo
+
+.archive_outdated/
