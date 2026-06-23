@@ -14,8 +14,6 @@ def test_pipeline_end_to_end_xml(capsys):
     2. Model Response (String with XML) -> Pipeline -> OpenAI Response (Tool Calls)
     3. OpenAI Request (with Tool Output) -> Pipeline -> Model Input (Formatted History)
     """
-    
-    # 1. Setup Pipeline
     extractor = XMLToolCallExtractor()
     builder = XMLToolCallBuilder()
     schema_builder = XMLToolSchemaBuilder()
@@ -28,7 +26,6 @@ def test_pipeline_end_to_end_xml(capsys):
         tool_schema_builder=schema_builder
     )
 
-    # 2. Define Tools and Input
     tools = [
         {
             "type": "function",
@@ -65,29 +62,20 @@ def test_pipeline_end_to_end_xml(capsys):
     print("\n\n=== 1. Original OpenAI Request ===")
     print(json.dumps(openai_request, indent=2))
 
-    # 3. Convert to Model Input (Pipeline Step 1)
     converted_request = pipeline.convert_openai(openai_request)
 
     print("\n=== 2. Converted Request (Sent to Model) ===")
     print(json.dumps(converted_request, indent=2))
 
-    # Assertions for Conversion
     last_message = converted_request["messages"][-1]
     assert last_message["role"] == "user"
     assert "What is the weather in London?" in last_message["content"]
     
-    # Check if schema was injected
     system_message = converted_request["messages"][0]
-    # The schema builder should have replaced the placeholder
     assert "{{llm_tools_list}}" not in system_message["content"]
-    # It should contain the tool definition
     assert "get_weather" in system_message["content"]
     assert "location" in system_message["content"]
 
-    # 4. Simulate Model Response
-    # The model should return an XML tool call
-    # Note: The exact format depends on the XMLToolCallExtractor's expectations.
-    # Assuming standard <tool_code> format based on previous context.
     model_response_str = """Thinking process...
 <tool_call>
 <name>get_weather</name>
@@ -98,7 +86,6 @@ def test_pipeline_end_to_end_xml(capsys):
     print("\n=== 3. Simulated Model Response ===")
     print(model_response_str)
 
-    # 5. Extract Response (Pipeline Step 2)
     openai_response, errors = pipeline.extract_response(model_response_str)
 
     print("\n=== 4. Extracted OpenAI Response ===")
@@ -108,7 +95,6 @@ def test_pipeline_end_to_end_xml(capsys):
         print("\n--- Errors ---")
         print(errors)
 
-    # Assertions for Extraction
     assert openai_response["role"] == "assistant"
     assert openai_response["finish_reason"] == "tool"
     assert len(openai_response["tool_calls"]) == 1
@@ -116,14 +102,10 @@ def test_pipeline_end_to_end_xml(capsys):
     tool_call = openai_response["tool_calls"][0]
     assert tool_call["function"]["name"] == "get_weather"
     
-    # Arguments are a JSON string in the OpenAI format
     args = json.loads(tool_call["function"]["arguments"])
     assert args["location"] == "London"
     assert args["unit"] == "celsius"
     assert errors == []
-
-    # 6. Simulate Tool Execution and Follow-up
-    # Now we simulate the user sending back the tool result
     
     tool_result_message = {
         "role": "tool",
@@ -132,14 +114,13 @@ def test_pipeline_end_to_end_xml(capsys):
         "content": "The weather in London is 15 degrees Celsius."
     }
     
-    # Construct the follow-up request including the history
     follow_up_request = {
         "model": "gpt-4",
         "messages": [
             {"role": "system", "content": "You are a helpful assistant. {{llm_tools_list}}"},
             {"role": "user", "content": "What is the weather in London?"},
-            openai_response, # The assistant's tool call message
-            tool_result_message # The tool output message
+            openai_response,
+            tool_result_message
         ],
         "tools": tools
     }
@@ -152,35 +133,132 @@ def test_pipeline_end_to_end_xml(capsys):
     print("\n=== 6. Converted Follow-up Request ===")
     print(json.dumps(converted_follow_up, indent=2))
 
-    # Assertions for Follow-up
-    # The pipeline should merge the tool response into the conversation
-    # The tool call itself (from the assistant) should be formatted by tool_call_builder
-    # The tool result (from the tool) should be formatted by tool_response_builder
-    
-    # Check that the assistant message (index 2) has the tool call formatted
-    # Note: convert_openai modifies the messages list in place or returns a new one?
-    # It does deepcopy at the start: new_json = copy.deepcopy(openai_json)
-    
-    # The assistant message with tool_calls should be converted to content
     assistant_msg = converted_follow_up["messages"][2]
     assert assistant_msg["role"] == "assistant"
-    # The tool call builder should have put the XML representation in content
     assert "<tool_call>" in assistant_msg["content"]
     assert "get_weather" in assistant_msg["content"]
-    
-    # The tool result message (index 3) should be formatted
-    # Wait, the pipeline logic merges tool responses.
-    # Let's look at the pipeline logic again.
-    # It iterates messages. If role is tool, it buffers.
-    # Then it flushes buffer.
-    # If the next message is user, it appends to user.
-    # If end of list, it appends a new user message?
-    
-    # In our case, the tool message is the last one.
-    # So it should flush buffer.
-    # flush_buffer() with no user message appends {"role": "user", "content": ...}
-    
+
     last_msg = converted_follow_up["messages"][-1]
     assert last_msg["role"] == "user"
-    # The content should contain the tool output
     assert "The weather in London is 15 degrees Celsius." in last_msg["content"]
+
+def test_pipeline_schema_validation():
+    """Test that pipeline properly triggers schema validation errors."""
+    extractor = XMLToolCallExtractor()
+    builder = XMLToolCallBuilder()
+    schema_builder = XMLToolSchemaBuilder()
+    response_builder = GenericResponseBuilder()
+    
+    pipeline = StandardToolPipeline(extractor, builder, response_builder, schema_builder)
+    
+    schemas = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"},
+                        "unit": {"type": "string", "enum": ["c", "f"]}
+                    },
+                    "required": ["location", "unit"]
+                }
+            }
+        }
+    ]
+    
+    model_response_str = """
+<tool_call>
+<name>get_weather</name>
+<location>London</location>
+<unit>invalid_unit</unit>
+</tool_call>
+"""
+    
+    openai_response, errors = pipeline.extract_response(model_response_str, schemas=schemas)
+    
+    assert len(errors) == 1
+    assert "Argument 'unit' value 'invalid_unit' is not valid." in errors[0]
+
+def test_pipeline_invalid_tool_choice():
+    """Test that the pipeline raises ValueError on invalid tool_choice."""
+    pipeline = StandardToolPipeline(
+        XMLToolCallExtractor(), XMLToolCallBuilder(), GenericResponseBuilder(), XMLToolSchemaBuilder()
+    )
+    with pytest.raises(ValueError, match="Unsupported parameter: 'tool_choice'"):
+        pipeline.convert_openai({"messages": [], "tool_choice": "required"})
+
+def test_pipeline_missing_messages():
+    """Test that the pipeline raises ValueError if messages key is missing."""
+    pipeline = StandardToolPipeline(
+        XMLToolCallExtractor(), XMLToolCallBuilder(), GenericResponseBuilder(), XMLToolSchemaBuilder()
+    )
+    with pytest.raises(ValueError, match="OpenAI JSON must contain a messages key."):
+        pipeline.convert_openai({"tool_choice": "auto"})
+
+def test_pipeline_multimodal_payload():
+    """Test pipeline handling of multimodal lists in message contents."""
+    pipeline = StandardToolPipeline(
+        XMLToolCallExtractor(), XMLToolCallBuilder(), GenericResponseBuilder(), XMLToolSchemaBuilder()
+    )
+    
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "test_tool",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }
+    ]
+    
+    openai_request = {
+        "messages": [
+            {
+                "role": "system",
+                "content": [{"type": "text", "text": "System message {{llm_tools_list}}"}]
+            },
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "I will call a tool."}],
+                "tool_calls": [
+                    {
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {"name": "test_tool", "arguments": "{}"}
+                    }
+                ]
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_123",
+                "name": "test_tool",
+                "content": "Tool result"
+            },
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "Follow up"}]
+            }
+        ],
+        "tools": tools
+    }
+    
+    converted = pipeline.convert_openai(openai_request)
+    
+    sys_content = converted["messages"][0]["content"]
+    assert isinstance(sys_content, list)
+    assert "test_tool" in sys_content[0]["text"]
+    assert "{{llm_tools_list}}" not in sys_content[0]["text"]
+    
+    asst_content = converted["messages"][1]["content"]
+    assert isinstance(asst_content, list)
+    assert len(asst_content) == 2
+    assert asst_content[0]["text"] == "I will call a tool."
+    assert "<tool_call>" in asst_content[1]["text"]
+    
+    usr_content = converted["messages"][2]["content"]
+    assert isinstance(usr_content, list)
+    assert len(usr_content) == 2
+    assert "Tool result" in usr_content[0]["text"]
+    assert usr_content[1]["text"] == "Follow up"

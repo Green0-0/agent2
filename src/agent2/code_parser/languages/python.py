@@ -7,12 +7,17 @@ import ast
 import tree_sitter
 import tree_sitter_python
 from typing import List, Any
+from agent2.code_parser.languages.abc import LanguageAdapter
 
-class PythonLanguageAdapter:
+class PythonLanguageAdapter(LanguageAdapter):
     """Adapter executing Python Tree-sitter queries and AST safety checks."""
-    language_id = "python"
+    @property
+    def language_id(self) -> str:
+        return "python"
 
-    extensions = [".py", ".pyi"]
+    @property
+    def extensions(self) -> List[str]:
+        return [".py", ".pyi"]
 
     def __init__(self):
         self.ts_lang = tree_sitter.Language(tree_sitter_python.language())

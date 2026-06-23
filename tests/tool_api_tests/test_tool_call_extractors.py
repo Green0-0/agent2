@@ -389,8 +389,6 @@ def hello():
 
     def test_string_fallback(self):
         extractor = MDToolCallExtractor()
-        # "foo" is not a valid python literal (unless it's a variable, which literal_eval rejects)
-        # So it should fall back to string "foo"
         response = """
 # Tool Use
 ## Name: test_tool
@@ -407,14 +405,6 @@ def hello():
 
     def test_quoted_string_behavior(self):
         extractor = MDToolCallExtractor()
-        # "'foo'" is a valid python string literal.
-        # ast.literal_eval("'foo'") -> "foo"
-        # Previous behavior: "'foo'" -> "'foo'" (string with quotes)
-        # New behavior: "'foo'" -> "foo" (string without quotes) IF literal_eval is used for strings.
-        # BUT my implementation only returns val if isinstance(val, (list, dict, tuple)).
-        # So ast.literal_eval("'foo'") returns "foo" (str), which is NOT in (list, dict, tuple).
-        # So it falls through to return stripped -> "'foo'".
-        # This preserves backward compatibility for strings!
         response = """
 # Tool Use
 ## Name: test_tool
@@ -542,19 +532,16 @@ tool(1, 2)
     def test_mismatched_tags(self):
         extractor = FakeCodeActToolCallExtractor()
         
-        # Missing end tag
         response = "<code>tool()<code>"
         result = extractor.extract(response)
         log_test_result("CodeAct - Missing End Tag", response, result)
         assert result[2] == [ToolError.TOOL_END_MISSING]
 
-        # Missing start tag
         response = "</code>"
         result = extractor.extract(response)
         log_test_result("CodeAct - Missing Start Tag", response, result)
         assert result[2] == [ToolError.TOOL_START_MISSING]
         
-        # Extra tags but valid block exists -> Should be valid now
         response = "<code>tool()</code><code>"
         result = extractor.extract(response)
         log_test_result("CodeAct - Extra Tags Valid", response, result)

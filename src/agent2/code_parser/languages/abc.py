@@ -1,17 +1,25 @@
 from typing import Optional
 from agent2.code_parser.dataclasses import CodeBlock
-from typing import Protocol, List, Any
+from typing import List, Any
+from abc import ABC, abstractmethod
 from agent2.code_parser.dataclasses import CodeNode, CodeState
 
-class LanguageAdapter(Protocol):
+class LanguageAdapter(ABC):
     """
-    Duck-typing interface. Any class implementing these attributes
-    is automatically evaluated as a valid LanguageAdapter by the engine.
+    Abstract Base Class for language adapters.
     """
-    language_id: str
+    
+    @property
+    @abstractmethod
+    def language_id(self) -> str:
+        pass
 
-    extensions: List[str]
+    @property
+    @abstractmethod
+    def extensions(self) -> List[str]:
+        pass
 
+    @abstractmethod
     def extract_nodes(self, root_node: Any, code_state: CodeState) -> List[CodeNode]:
         """Executes Tree-sitter queries to extract granular code nodes.
         
@@ -22,8 +30,9 @@ class LanguageAdapter(Protocol):
         Returns:
             A list of CodeNodes.
         """
-        ...
+        pass
 
+    @abstractmethod
     def parse(self, source_bytes: bytes, old_tree: Optional[Any] = None) -> Any:
         """Parses the bytes into a Tree-sitter AST.
         
@@ -34,8 +43,9 @@ class LanguageAdapter(Protocol):
         Returns:
             The root node of the AST.
         """
-        ...
+        pass
 
+    @abstractmethod
     def attempt_fix_formatting(self, new_code: str, target_code_block: CodeBlock, code_state: CodeState) -> str:
         """Attempts to fix formatting issues, such as indentation, and beautify the code. May not be implemented for certain languages.
         
@@ -47,4 +57,4 @@ class LanguageAdapter(Protocol):
         Returns:
             The formatted code.
         """
-        ...
+        pass

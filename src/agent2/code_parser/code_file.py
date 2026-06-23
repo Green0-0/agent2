@@ -3,7 +3,7 @@ from typing import Tuple
 from typing import Optional, Dict, Any
 
 from agent2.code_parser.dataclasses import CodeEdit, CodeNode, CodeState
-from agent2.code_parser.languages.protocol import LanguageAdapter
+from agent2.code_parser.languages.abc import LanguageAdapter
 
 class CodeFile:
     """

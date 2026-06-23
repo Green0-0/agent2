@@ -32,7 +32,6 @@ class MDToolCallBuilder(ToolCallBuilder):
                 str_value = str(arg_value)
                 parts = str_value.split('\n')
                 
-                # First part after colon, remaining parts as separate lines
                 if len(parts) > 0:
                     lines.append(f"### {arg_name}: {parts[0]}")
                     for part in parts[1:]:

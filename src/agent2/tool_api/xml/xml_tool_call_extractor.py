@@ -24,11 +24,9 @@ class XMLToolCallExtractor(ToolCallExtractor):
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """
-        # Check for mismatched tags
         num_starts = response_str.count(self.tool_start)
         num_ends = response_str.count(self.tool_end)
         
-        # Adjust for overlapping tags (e.g. ```json contains ```)
         if num_starts > 0 and self.tool_end in self.tool_start:
             num_ends -= num_starts * self.tool_start.count(self.tool_end)
             
@@ -40,20 +38,16 @@ class XMLToolCallExtractor(ToolCallExtractor):
         tool_calls = []
         errors = []
         
-        # Escape tags for regex
         start_tag_esc = re.escape(self.tool_start)
         end_tag_esc = re.escape(self.tool_end)
         
-        # Pattern to find tool call blocks
         pattern = f"{start_tag_esc}(.*?){end_tag_esc}"
         
         matches = list(re.finditer(pattern, response_str, re.DOTALL))
         
         if not matches:
-            # No tool calls found
             return response_str, [], []
             
-        # Identify contiguous matches
         contiguous_matches = []
         if matches:
             contiguous_matches.append(matches[0])
@@ -62,11 +56,9 @@ class XMLToolCallExtractor(ToolCallExtractor):
                 curr_match = matches[i]
                 intervening_text = response_str[prev_match.end():curr_match.start()]
                 if intervening_text.strip():
-                    # Found non-whitespace text between tool calls, stop here
                     break
                 contiguous_matches.append(curr_match)
         
-        # The message is everything before the first tool call
         cleaned_response = response_str[:contiguous_matches[0].start()].strip()
         
         for match in contiguous_matches:
@@ -115,7 +107,6 @@ class XMLToolCallExtractor(ToolCallExtractor):
                 try:
                     return float(s)
                 except ValueError:
-                    # Try to parse as a complex structure (list, dict)
                     try:
                         val = ast.literal_eval(s)
                         if isinstance(val, (list, dict)):
@@ -124,14 +115,11 @@ class XMLToolCallExtractor(ToolCallExtractor):
                         pass
                     return s
 
-        # Find all XML elements with their content
-        # This regex matches <tag>content</tag>
         elements = re.findall(r"<([a-zA-Z0-9_]+)>(.*?)</\1>", input_str, re.DOTALL)
         
         if not elements:
             raise ValueError("No valid XML elements found")
 
-        # Validate first element is the name tag
         name_tag, name_content = elements[0]
         if name_tag != "name":
             raise KeyError("First element must be <name>")
@@ -142,7 +130,6 @@ class XMLToolCallExtractor(ToolCallExtractor):
 
         result = {"name": name_value, "arguments": {}}
 
-        # Process remaining elements as arguments
         seen_tags = set()
         for tag, content in elements[1:]:
             if tag in seen_tags:

@@ -31,11 +31,12 @@ class ToolPipeline(ABC):
         pass
     
     @abstractmethod
-    def extract_response(self, response_str: str) -> Tuple[Dict, List]:
+    def extract_response(self, response_str: str, schemas: List[Dict] = None) -> Tuple[Dict, List]:
         """Parses a response string into an OpenAI message dict.
 
         Args:
             response_str (str): The response string to parse.
+            schemas (List[Dict], optional): The list of tool schemas to validate against.
             
         Returns:
             Tuple[Dict, List]: The openai message dict and a list of errors.
@@ -75,7 +76,6 @@ class ToolPipeline(ABC):
         """
         openai_tool_calls = []
         for tool_call in tool_calls:
-            # Convert from internal format
             openai_tool_calls.append({
                 "id": "call_" + str(uuid.uuid4())[:8],
                 "type": "function",

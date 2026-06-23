@@ -29,11 +29,9 @@ class FakeCodeActToolSchemaBuilder(ToolSchemaBuilder):
             properties = parameters.get("properties", {})
             required = parameters.get("required", [])
             
-            # Build arguments string
             args_parts = []
             for prop_name, prop_def in properties.items():
                 prop_type = prop_def.get("type", "any")
-                # Map JSON types to Python types roughly
                 type_map = {
                     "string": "str",
                     "integer": "int",

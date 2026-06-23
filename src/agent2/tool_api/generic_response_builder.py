@@ -19,5 +19,4 @@ class GenericResponseBuilder(ToolResponseBuilder):
         for resp in tool_response_json:
             responses.append(resp["content"])
             
-        # Return as a JSON list
         return "\n".join(responses)

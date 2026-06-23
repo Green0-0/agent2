@@ -25,11 +25,9 @@ class JSONToolCallExtractor(ToolCallExtractor):
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """
-        # Check for mismatched tags
         num_starts = response_str.count(self.tool_start)
         num_ends = response_str.count(self.tool_end)
         
-        # Adjust for overlapping tags (e.g. ```json contains ```)
         if num_starts > 0 and self.tool_end in self.tool_start:
             num_ends -= num_starts * self.tool_start.count(self.tool_end)
             
@@ -41,11 +39,9 @@ class JSONToolCallExtractor(ToolCallExtractor):
         tool_calls = []
         errors = []
 
-        # Escape tags for regex
         start_tag_esc = re.escape(self.tool_start)
         end_tag_esc = re.escape(self.tool_end)
         
-        # Pattern to find tool call blocks
         pattern = f"{start_tag_esc}(.*?){end_tag_esc}"
         
         matches = list(re.finditer(pattern, response_str, re.DOTALL))
@@ -53,7 +49,6 @@ class JSONToolCallExtractor(ToolCallExtractor):
         if not matches:
             return response_str, [], []
 
-        # Identify contiguous matches
         contiguous_matches = []
         if matches:
             contiguous_matches.append(matches[0])
@@ -62,11 +57,9 @@ class JSONToolCallExtractor(ToolCallExtractor):
                 curr_match = matches[i]
                 intervening_text = response_str[prev_match.end():curr_match.start()]
                 if intervening_text.strip():
-                    # Found non-whitespace text between tool calls, stop here
                     break
                 contiguous_matches.append(curr_match)
         
-        # The message is everything before the first tool call
         cleaned_response = response_str[:contiguous_matches[0].start()].strip()
         
         def duplicate_key_check(ordered_pairs):

@@ -21,11 +21,9 @@ def run_roundtrip_test(builder_cls, extractor_cls, tool_calls: List[Dict], forma
     builder = builder_cls()
     extractor = extractor_cls()
     
-    # 1. Generate message with tool call using builder
     generated_text = builder.build(tool_calls)
     print(f"Generated Text:\n{generated_text}")
     
-    # 2. Attempt to extract it again
     cleaned_text, extracted_calls, errors = extractor.extract(generated_text)
     
     if errors:
@@ -33,12 +31,7 @@ def run_roundtrip_test(builder_cls, extractor_cls, tool_calls: List[Dict], forma
         pytest.fail(f"Extraction failed with errors: {errors}")
         
     print(f"Extracted Calls: {extracted_calls}")
-    
-    # 3. Build it again
-    # We need to convert extracted calls back to the format expected by builder
-    # Builder expects: [{'function': {'name': '...', 'arguments': 'json_string'}}]
-    # Extracted calls are: [{'name': '...', 'arguments': {...}}]
-    
+
     reconstructed_tool_calls = []
     for call in extracted_calls:
         reconstructed_call = {
@@ -53,7 +46,6 @@ def run_roundtrip_test(builder_cls, extractor_cls, tool_calls: List[Dict], forma
     rebuilt_text = builder.build(reconstructed_tool_calls)
     print(f"Rebuilt Text:\n{rebuilt_text}")
     
-    # 4. Check if the final result is the exact same
     if generated_text != rebuilt_text:
         print(f"Generated text and rebuilt text differ for {format_name}.")
         
@@ -133,7 +125,6 @@ def test_codeact_roundtrip():
     run_roundtrip_test(FakeCodeActToolCallBuilder, FakeCodeActToolCallExtractor, tool_calls, "CodeAct")
 
 def test_complex_types_roundtrip():
-    # Test with lists and nested structures if supported
     tool_calls = [
         {
             "type": "function",
@@ -147,16 +138,12 @@ def test_complex_types_roundtrip():
         }
     ]
     
-    # XML supports simple string conversion of lists/dicts via str() and ast.literal_eval()
     run_roundtrip_test(XMLToolCallBuilder, XMLToolCallExtractor, tool_calls, "XML Complex")
     
-    # JSON naturally supports it
     run_roundtrip_test(JSONToolCallBuilder, JSONToolCallExtractor, tool_calls, "JSON Complex")
     
-    # MD uses str() and might be tricky with newlines in dicts, but let's see
     run_roundtrip_test(MDToolCallBuilder, MDToolCallExtractor, tool_calls, "Markdown Complex")
 
-    # CodeAct supports complex types via python syntax
     run_roundtrip_test(FakeCodeActToolCallBuilder, FakeCodeActToolCallExtractor, tool_calls, "CodeAct Complex")
 
 if __name__ == "__main__":

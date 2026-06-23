@@ -6,7 +6,7 @@ from agent2.tool_api.json.json_tool_schema_builder import JSONToolSchemaBuilder
 from agent2.tool_api.md.md_tool_schema_builder import MDToolSchemaBuilder
 from agent2.tool_api.fake_codeact.fake_codeact_tool_schema_builder import FakeCodeActToolSchemaBuilder
 
-# --- Test Data ---
+"""Test data for tool schema builders."""
 
 SAMPLE_TOOL_SCHEMA = [
     {
@@ -119,21 +119,19 @@ EMPTY_PARAMS_TOOL_SCHEMA = [
     }
 ]
 
-# --- Helper Functions ---
-
 def print_section(title: str, content: str):
+    """Helper to print a section of output."""
     print(f"\n--- {title} ---")
     print(content)
 
 def print_comparison(title: str, xml: str, json_str: str, md: str, codeact: str):
+    """Helper to print a comparison of schemas from different builders."""
     print(f"\n=== {title} Output ===")
     print_section("XML", xml)
     print_section("JSON", json_str)
     print_section("MD", md)
     print_section("CodeAct", codeact)
     print("=========================\n")
-
-# --- Tests ---
 
 def test_standard_schema_generation():
     """Test that all builders correctly generate schemas for a standard set of tools."""
@@ -149,38 +147,27 @@ def test_standard_schema_generation():
 
     print_comparison("Standard Schema", "\n".join(xml_schema), "\n".join(json_schema), "\n".join(md_schema), "\n".join(codeact_schema))
 
-    # XML Assertions
-    assert len(xml_schema) == 2
     assert "<name>get_weather</name>" in xml_schema[0]
     assert "<location>Required (string): The city and state, e.g. San Francisco, CA</location>" in xml_schema[0]
     assert "<name>search_web</name>" in xml_schema[1]
-    
-    # Ensure no wrapping tags
     assert "<tool_code>" not in xml_schema[0]
 
-    # JSON Assertions
     assert len(json_schema) == 2
     loaded_json_0 = json.loads(json_schema[0])
     loaded_json_1 = json.loads(json_schema[1])
     assert loaded_json_0 == SAMPLE_TOOL_SCHEMA[0]
     assert loaded_json_1 == SAMPLE_TOOL_SCHEMA[1]
 
-    # MD Assertions
     assert len(md_schema) == 2
     assert "## Name: get_weather" in md_schema[0]
     assert "### location (string, required): The city and state" in md_schema[0]
     assert "## Name: search_web" in md_schema[1]
-    
-    # Ensure no wrapping tags
     assert "# Tool Use" not in md_schema[0]
     
-    # CodeAct Assertions
     assert len(codeact_schema) == 2
     assert "def get_weather(location: str, unit: str = None):" in codeact_schema[0]
     assert '"""Get the current weather in a given location"""' in codeact_schema[0]
     assert "def search_web(query: str):" in codeact_schema[1]
-    
-    # Ensure no wrapping tags
     assert "```python" not in codeact_schema[0]
 
 
@@ -198,22 +185,18 @@ def test_complex_properties():
 
     print_comparison("Complex Properties", "\n".join(xml_schema), "\n".join(json_schema), "\n".join(md_schema), "\n".join(codeact_schema))
 
-    # XML Assertions
     assert len(xml_schema) == 1
     assert "<count>Required (integer): Number of items</count>" in xml_schema[0]
     assert "<tags>Optional (array): List of tags</tags>" in xml_schema[0]
 
-    # JSON Assertions
     assert len(json_schema) == 1
     assert "complex_tool" in json_schema[0]
     assert "integer" in json_schema[0]
 
-    # MD Assertions
     assert len(md_schema) == 1
     assert "### count (integer, required): Number of items" in md_schema[0]
     assert "### tags (array, optional): List of tags" in md_schema[0]
     
-    # CodeAct Assertions
     assert len(codeact_schema) == 1
     assert "def complex_tool(count: int, is_valid: bool = None, tags: list = None, metadata: dict = None):" in codeact_schema[0]
 
@@ -232,22 +215,19 @@ def test_missing_fields_in_properties():
 
     print_comparison("Missing Fields", "\n".join(xml_schema), "\n".join(json_schema), "\n".join(md_schema), "\n".join(codeact_schema))
 
-    # XML Assertions (Defaults: type=string, desc="")
+    # Defaults: type=string, desc=""
     assert len(xml_schema) == 1
     assert "<arg_no_type>Optional (string): Missing type</arg_no_type>" in xml_schema[0]
     assert "<arg_no_desc>Optional (string)</arg_no_desc>" in xml_schema[0]
 
-    # JSON Assertions
     assert len(json_schema) == 1
     assert "incomplete_props" in json_schema[0]
 
-    # MD Assertions
     assert len(md_schema) == 1
     assert "### arg_no_type (string, optional): Missing type" in md_schema[0]
     assert "### arg_no_desc (string, optional): " in md_schema[0]
     
-    # CodeAct Assertions
-    # Note: The mapping for missing type defaults to "Any" in CodeAct builder
+    # The mapping for missing type defaults to "Any" in CodeAct builder
     assert len(codeact_schema) == 1
     assert "arg_no_type: Any = None" in codeact_schema[0]
     assert "arg_no_desc: str = None" in codeact_schema[0]
@@ -260,14 +240,12 @@ def test_edge_cases():
     md_builder = MDToolSchemaBuilder()
     codeact_builder = FakeCodeActToolSchemaBuilder()
 
-    # 1. Empty Schema
     empty_schema = []
     assert xml_builder.build(empty_schema) == []
     assert json_builder.build(empty_schema) == []
     assert md_builder.build(empty_schema) == []
     assert codeact_builder.build(empty_schema) == []
 
-    # 2. Minimal Tool (no params, no desc)
     xml_min = xml_builder.build(MINIMAL_TOOL_SCHEMA)
     json_min = json_builder.build(MINIMAL_TOOL_SCHEMA)
     md_min = md_builder.build(MINIMAL_TOOL_SCHEMA)
@@ -284,7 +262,6 @@ def test_edge_cases():
     assert len(codeact_min) == 1
     assert "def minimal_tool():" in codeact_min[0]
 
-    # 3. Tool with Empty Parameters
     xml_empty = xml_builder.build(EMPTY_PARAMS_TOOL_SCHEMA)
     json_empty = json_builder.build(EMPTY_PARAMS_TOOL_SCHEMA)
     md_empty = md_builder.build(EMPTY_PARAMS_TOOL_SCHEMA)

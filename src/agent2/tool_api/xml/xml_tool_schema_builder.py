@@ -17,7 +17,6 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
         """
         schemas = []
         for tool in tool_schema_json:
-            # Handle OpenAI format where the tool definition is inside "function"
             if "function" in tool:
                 func = tool["function"]
             else:
@@ -34,7 +33,6 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
                 f"<description>{description}</description>"
             ]
             
-            # Process arguments
             for prop_name, prop_def in properties.items():
                 prop_type = prop_def.get("type", "string")
                 prop_desc = prop_def.get("description", "")
@@ -42,7 +40,6 @@ class XMLToolSchemaBuilder(ToolSchemaBuilder):
                 is_required = prop_name in required
                 req_str = "Required" if is_required else "Optional"
                 
-                # Format: <arg_name>Required (type): description</arg_name>
                 content = f"{req_str} ({prop_type})"
                 if prop_desc:
                     content += f": {prop_desc}"

@@ -1,8 +1,10 @@
 import pytest
 import json
-from agent2.tool_api.tool_validator import ToolValidator
+from agent2.tool_api.tool_validator import validate
 
 class TestToolValidator:
+    """Test suite for the tool_validator component."""
+    
     def setup_method(self):
         self.schemas = [
             {
@@ -50,7 +52,7 @@ class TestToolValidator:
                 "arguments": json.dumps({"location": "London", "unit": "c", "days": 5})
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert errors == []
 
     def test_missing_tool(self):
@@ -61,7 +63,7 @@ class TestToolValidator:
                 "arguments": "{}"
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Tool 'unknown_tool' not found in schema." in errors
 
     def test_missing_required_arg(self):
@@ -72,7 +74,7 @@ class TestToolValidator:
                 "arguments": json.dumps({"unit": "c"})
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Missing required argument: 'location'." in errors
 
     def test_extra_arg(self):
@@ -83,7 +85,7 @@ class TestToolValidator:
                 "arguments": json.dumps({"location": "London", "extra": "val"})
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Unknown argument: 'extra'." in errors
 
     def test_wrong_type_string(self):
@@ -91,10 +93,10 @@ class TestToolValidator:
             "type": "function",
             "function": {
                 "name": "get_weather",
-                "arguments": json.dumps({"location": 123}) # Should be string
+                "arguments": json.dumps({"location": 123})
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Argument 'location' expected type 'string', got 'int'." in errors
 
     def test_invalid_enum(self):
@@ -105,12 +107,11 @@ class TestToolValidator:
                 "arguments": json.dumps({"location": "London", "unit": "kelvin"})
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Argument 'unit' value 'kelvin' is not valid. Allowed: ['c', 'f']." in errors
 
-    # --- New Edge Cases ---
-
     def test_malformed_json_arguments(self):
+        """Test validation behavior with invalid JSON arguments."""
         call = {
             "type": "function",
             "function": {
@@ -118,7 +119,7 @@ class TestToolValidator:
                 "arguments": "{bad_json"
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Tool arguments are not valid JSON." in errors
 
     def test_arguments_not_dict(self):
@@ -129,59 +130,56 @@ class TestToolValidator:
                 "arguments": "[\"list\", \"instead\"]"
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Tool arguments must be a dictionary." in errors
 
     def test_missing_function_field(self):
         call = {
             "type": "function",
-            # Missing "function"
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Tool call missing 'function' field." in errors
 
     def test_missing_name_field(self):
         call = {
             "type": "function",
             "function": {
-                # Missing "name"
                 "arguments": "{}"
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Tool call missing function name." in errors
 
     def test_wrong_tool_type(self):
         call = {
-            "type": "code_interpreter", # Wrong type
+            "type": "code_interpreter",
             "function": {
                 "name": "get_weather",
                 "arguments": "{}"
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Tool call type must be 'function'." in errors
 
     def test_multiple_errors(self):
-        # Missing required arg AND extra arg AND wrong type
+        """Test validation behavior with multiple errors in a single call."""
         call = {
             "type": "function",
             "function": {
                 "name": "get_weather",
                 "arguments": json.dumps({
-                    "unit": 123, # Wrong type (should be string)
-                    "extra": "val" # Extra arg
-                    # Missing 'location'
+                    "unit": 123,
+                    "extra": "val"
                 })
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Missing required argument: 'location'." in errors
         assert "Unknown argument: 'extra'." in errors
         assert "Argument 'unit' expected type 'string', got 'int'." in errors
 
     def test_complex_types(self):
-        # Test int, bool, number, array, object
+        """Test validation behavior with complex types like int, bool, number, array, and object."""
         call = {
             "type": "function",
             "function": {
@@ -196,7 +194,7 @@ class TestToolValidator:
                 })
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert "Argument 'int_arg' expected type 'integer', got 'str'." in errors
         assert "Argument 'bool_arg' expected type 'boolean', got 'str'." in errors
         assert "Argument 'num_arg' expected type 'number', got 'str'." in errors
@@ -218,11 +216,11 @@ class TestToolValidator:
                 })
             }
         }
-        errors = ToolValidator.validate(call, self.schemas)
+        errors = validate(call, self.schemas)
         assert errors == []
 
     def test_schema_fallback_format(self):
-        # Test schema that is just the function dict (without wrapper)
+        """Test validation behavior with a simple schema missing the 'function' wrapper."""
         simple_schema = [
             {
                 "name": "simple_tool",
@@ -240,5 +238,5 @@ class TestToolValidator:
                 "arguments": json.dumps({"arg": "val"})
             }
         }
-        errors = ToolValidator.validate(call, simple_schema)
+        errors = validate(call, simple_schema)
         assert errors == []

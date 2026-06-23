@@ -25,11 +25,9 @@ class MDToolCallExtractor(ToolCallExtractor):
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """
-        # Check for mismatched tags
         num_starts = response_str.count(self.tool_start)
         num_ends = response_str.count(self.tool_end)
         
-        # Adjust for overlapping tags (e.g. ```json contains ```)
         if num_starts > 0 and self.tool_end in self.tool_start:
             num_ends -= num_starts * self.tool_start.count(self.tool_end)
             
@@ -41,11 +39,9 @@ class MDToolCallExtractor(ToolCallExtractor):
         tool_calls = []
         errors = []
         
-        # Escape tags for regex
         start_tag_esc = re.escape(self.tool_start)
         end_tag_esc = re.escape(self.tool_end)
         
-        # Pattern to find tool call blocks
         pattern = f"{start_tag_esc}(.*?){end_tag_esc}"
         
         matches = list(re.finditer(pattern, response_str, re.DOTALL))
@@ -53,7 +49,6 @@ class MDToolCallExtractor(ToolCallExtractor):
         if not matches:
             return response_str, [], []
             
-        # Identify contiguous matches
         contiguous_matches = []
         if matches:
             contiguous_matches.append(matches[0])
@@ -62,11 +57,9 @@ class MDToolCallExtractor(ToolCallExtractor):
                 curr_match = matches[i]
                 intervening_text = response_str[prev_match.end():curr_match.start()]
                 if intervening_text.strip():
-                    # Found non-whitespace text between tool calls, stop here
                     break
                 contiguous_matches.append(curr_match)
         
-        # The message is everything before the first tool call
         cleaned_response = response_str[:contiguous_matches[0].start()].strip()
         
         for match in contiguous_matches:
@@ -104,7 +97,6 @@ class MDToolCallExtractor(ToolCallExtractor):
                 try:
                     return float(stripped)
                 except ValueError:
-                    # Try to parse as a complex structure (list, dict)
                     try:
                         val = ast.literal_eval(stripped)
                         if isinstance(val, (list, dict)):
@@ -118,8 +110,6 @@ class MDToolCallExtractor(ToolCallExtractor):
         if not lines:
             raise ValueError("Empty tool call content")
 
-        # Parse tool name
-        # Find first non-empty line
         first_line_idx = 0
         while first_line_idx < len(lines) and not lines[first_line_idx].strip():
             first_line_idx += 1
@@ -139,16 +129,13 @@ class MDToolCallExtractor(ToolCallExtractor):
         for line in lines[first_line_idx + 1:]:
             if line.startswith('### '):
                 if current_param is not None:
-                    # Save the previous parameter
                     value_str = '\n'.join(current_value).strip()
                     parsed_value = parse_value(value_str)
                     result['arguments'][current_param] = parsed_value
                     current_value = []
                 
-                # Parse new parameter
                 param_line = line[len('### '):]
                 if ':' not in param_line:
-                    # Maybe it's a malformed line, or just '### param:' with empty value on this line
                     if param_line.strip().endswith(':'):
                         param_name = param_line.strip()[:-1]
                         param_value = ""
@@ -158,20 +145,17 @@ class MDToolCallExtractor(ToolCallExtractor):
                     param_name, param_value = param_line.split(':', 1)
                 
                 current_param = param_name.strip()
-                current_value.append(param_value) # Don't strip yet, might be multiline
+                current_value.append(param_value)
                 
-                # Check for duplicate parameters
                 if current_param in result['arguments']:
                     raise DuplicateArgumentError(f"Duplicate parameter: {current_param}")
             else:
                 if current_param is None:
-                    # Ignore empty lines before first param
                     if not line.strip():
                         continue
                     raise ValueError(f"Line '{line}' is not part of any parameter")
                 current_value.append(line)
         
-        # Add the last parameter
         if current_param is not None:
             value_str = '\n'.join(current_value).strip()
             parsed_value = parse_value(value_str)

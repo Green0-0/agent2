@@ -17,7 +17,6 @@ class MDToolSchemaBuilder(ToolSchemaBuilder):
         """
         schemas = []
         for tool in tool_schema_json:
-            # Handle OpenAI format where the tool definition is inside "function"
             if "function" in tool:
                 func = tool["function"]
             else:
@@ -35,7 +34,6 @@ class MDToolSchemaBuilder(ToolSchemaBuilder):
             if description:
                 lines.append(f"### Description: {description}")
             
-            # Process arguments
             for prop_name, prop_def in properties.items():
                 prop_type = prop_def.get("type", "string")
                 prop_desc = prop_def.get("description", "")
@@ -43,7 +41,6 @@ class MDToolSchemaBuilder(ToolSchemaBuilder):
                 is_required = prop_name in required
                 req_str = "required" if is_required else "optional"
                 
-                # Format: ### arg_name (type, required/optional): description
                 content = f"### {prop_name} ({prop_type}, {req_str}): {prop_desc}"
                 lines.append(content)
             
