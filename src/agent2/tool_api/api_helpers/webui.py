@@ -98,8 +98,8 @@ with tab1:
     operation = st.selectbox(
         "Operation",
         [
-            "convert_request",
-            "extract_response",
+            "convert",
+            "extract",
             "build_schema",
             "build_call",
             "build_response",
@@ -107,8 +107,8 @@ with tab1:
             "roundtrip",
         ],
         format_func=lambda x: {
-            "convert_request": "Convert OAI chat (with tools) → without tools",
-            "extract_response": "Extract tool calls from a response string",
+            "convert": "Convert OAI chat (with tools) → without tools",
+            "extract": "Extract tool calls from a response string",
             "build_schema": "Build schema string from tool schemas",
             "build_call": "Build tool-call string from JSON",
             "build_response": "Build tool-response string from JSON",
@@ -157,8 +157,8 @@ with tab1:
     st.subheader("Quick reference - expected input shapes")
     with st.expander("Show input shapes"):
         st.code(
-            "convert_request:  { 'messages':[...], 'tools':[...] }\n"
-            "extract_response: { 'response_str':'...', 'schemas':[...] }\n"
+            "convert:          { 'messages':[...], 'tools':[...] }\n"
+            "extract:          { 'response_str':'...', 'schemas':[...] }\n"
             "build_schema:     { 'tools':[<OpenAI tool def>, ...] }\n"
             "build_call:       { 'tool_calls':[<OpenAI tool call>, ...] }\n"
             "build_response:   { 'tool_responses':[{'role':'tool','content':'...'}, ...] }\n"

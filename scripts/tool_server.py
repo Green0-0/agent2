@@ -2,6 +2,7 @@ import argparse
 import os
 import subprocess
 import sys
+from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
@@ -29,7 +30,14 @@ def create_app(
     schema_key: str = "{{llm_tools_list}}",
     replace_schema_all: bool = True,
 ) -> FastAPI:
-    app = FastAPI(title="Tool API Proxy", version="1.0.0")
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        # Reuse a single AsyncClient for all proxied requests
+        app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
+        yield
+        await app.state.http_client.aclose()
+
+    app = FastAPI(title="Tool API Proxy", version="1.0.0", lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -48,15 +56,6 @@ def create_app(
     app.state.pipeline = pipeline
     app.state.backend_url = backend_url
     app.state.history = history
-
-    @app.on_event("startup")
-    async def startup_event():
-        # Reuse a single AsyncClient for all proxied requests
-        app.state.http_client = httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=10.0))
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        await app.state.http_client.aclose()
 
     custom_routes = {
         "convert": handle_convert,
@@ -118,7 +117,7 @@ def _run_streamlit_subprocess(server_port: int) -> subprocess.Popen:
     env = os.environ.copy()
     env["TOOL_API_URL"] = f"http://localhost:{server_port}"
     here = os.path.dirname(os.path.abspath(__file__))
-    webui_path = os.path.join(here, "webui.py")
+    webui_path = os.path.join(here, "..", "src", "agent2", "tool_api", "api_helpers", "webui.py")
     cmd = [
         sys.executable, "-m", "streamlit", "run", webui_path,
         "--server.headless", "true",
