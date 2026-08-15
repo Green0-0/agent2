@@ -1,0 +1,15 @@
+system_prompt = """
+{{tools}}
+{{{filestructure}}}
+"""
+
+header = """
+Act as an agent for a project located at {{path}} with the following file structure:
+{{{filestructure}}}"""
+
+file_hint = """
+Use tool calls to read {{speculated_views}}. When reading these, do not output anything but a tool call, no elaboration is needed."""
+
+prompt_wrapper = """
+Complete the task of acting as a file reading / project analysis / research agent for the following prompt:
+{{prompt}}"""
