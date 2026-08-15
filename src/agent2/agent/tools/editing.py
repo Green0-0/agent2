@@ -29,10 +29,23 @@ def replace_element(file_path: str, element_path: str, new_content: str):
     
     For example:
     ``"scripts/my_script.py" "my_class.inner_function" "def inner_function..."``
-    Would replace the inner function in my_class of my_script.py with whatever code specified.
+    Would replace the inner function in my_class of my_script.py with the specified code specified.
+    
+    If specific lines need to be edited, or if a file extension is not supported, lookup the replace_lines tool instead.
     """
     ...
     
+def replace_element_at(file_path: str, line: int, new_content: str):
+    """Takes as input a line number at a given file path, and replaces the innermost element at that line with the contents.
+    
+    For example:
+    ``"scripts/my_script.py" 10 "def inner_function..."``
+    Would replace the element present at line 10 of my_script.py with the specified code.
+    
+    If specific lines need to be edited, or if a file extension is not supported, lookup the replace_lines tool instead.
+    """
+    # WARNING: THIS SHOULD NOT BE USED, AS A MISFIRE FROM WRITING THE WRONG LINE WILL DESTROY THE ELEMENT
+    ...
     
 def replace_lines(file_path: str, line_start: int, line_end: int, new_content: str):    
     """Takes as input a file path and the start/end line range, and replaces its contents.
@@ -44,7 +57,7 @@ def replace_lines(file_path: str, line_start: int, line_end: int, new_content: s
     ...
 
 
-def open_lines(file_path: str, line_start: int, line_end: int, new_content: str):
+def open_lines(file_path: str, line_start: int, line_end: int):
     """Opens an editing window at the specified file_path and the given start/end line range. The editing window first displays the file and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
     
     For example:
@@ -61,7 +74,7 @@ def open_lines(file_path: str, line_start: int, line_end: int, new_content: str)
     """
 
 
-def open_file(file_path: str, new_content: str):
+def open_file(file_path: str):
     """Opens an editing window at the specified file_path. The editing window first displays the file and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
     
     For example:
@@ -79,7 +92,7 @@ def open_file(file_path: str, new_content: str):
     ...
     
     
-def open_element(file_path: str, element_path: str, new_content: str):
+def open_element(file_path: str, element_path: str):
     """Opens an editing window at the specified file_path and the given element_path. The editing window first displays the element and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
     
     For example:
@@ -93,5 +106,26 @@ def open_element(file_path: str, element_path: str, new_content: str):
         ...
     ```
     will close the edit window and show either the diff or cancellation message.
+    
+    If specific lines need to be edited, or if a file extension is not supported, lookup the open_lines tool instead.
+    """
+    ...
+    
+def open_element_at(file_path: str, element_path: str):
+    """Opens an editing window at the specified file_path and the innermost element at the given line. The editing window first displays the element and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
+    
+    For example:
+    ``"scripts/my_script.py" 10``
+    Will show the entirety the element at line 10. 
+    Next, outputting a cancellation message, such as:
+    "Accidentally specified the wrong element to edit. Should edit inner_function instead because ..."
+    or a code block in markdown:
+    ```python
+    class my_class:
+        ...
+    ```
+    will close the edit window and show either the diff or cancellation message.
+    
+    If specific lines need to be edited, or if a file extension is not supported, lookup the open_lines tool instead.
     """
     ...

@@ -52,6 +52,37 @@ def view_file(file_path: str, full: bool = False):
     """
     ...
     
+def views_at(paths: str, full: bool = False):
+    """Takes as input a comma separated list of file paths with lines to view the innermost elements at.
+    
+    The format for a singular view is {{file_path}}::{{line}}. If `full` is true, the entire element is guranteed to be shown. Otherwise, it may be simplified if it is too long.
+    
+    Note: If no specific element is present at a line, instead views everything from that line down and up to the nearest element.
+    
+    For example:
+    ``"scripts/script_1.py::100, scripts/script_2.py::200", True``
+    Shows the entirety of the innermost element found at line 100 in script_1, and line 200 in script_2.
+    
+    If specific lines need to be viewed, or if a file extension is not supported, lookup the view_lines tool instead.
+    """
+    ...
+    
+def view_at(file_path: str, line: int, full: bool = False):
+    """Takes as input a file path and a line number to view the innermost element at.
+    
+    If `full` is true, the entire element is guranteed to be shown. Otherwise, it may be simplified if it is too long.
+    
+    Note: If no specific element is present at a line, instead views everything from that line down and up to the nearest element.
+    
+    For example:
+    ``"scripts/script_2.py", 100, True``
+    Shows the entirety of the innermost element found at line 100 in script_2.
+    ``"scripts/script_1.py", 200, False``
+    Shows an overview of the innermost element found at line 200 in script_1. It may be reduced to an overview if its content is too long.
+    
+    If specific lines need to be viewed, or if a file extension is not supported, lookup the view_lines tool instead.
+    """
+    ...
     
 def view_element(file_path: str, element_path: str, full: bool = False):
     """Takes as input an element path at a given file path to view.
@@ -63,6 +94,8 @@ def view_element(file_path: str, element_path: str, full: bool = False):
     Shows the entirety of my_class.
     ``"scripts/script_1.py", "my_class.my_func", False``
     Shows an overview of the function my_func inside my_class. It may be reduced to an overview if its content is too long.
+    
+    If specific lines need to be viewed, or if a file extension is not supported, lookup the view_lines tool instead.
     """
     ...
 
