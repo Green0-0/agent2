@@ -1,3 +1,6 @@
+id = "sample_agent"
+subagent_description = "A sample file reading and project analysis agent"
+
 system_prompt = """
 {{tools}}
 {{{filestructure}}}
@@ -7,7 +10,7 @@ header = """
 Act as an agent for a project located at {{path}} with the following file structure:
 {{{filestructure}}}"""
 
-file_hint = """
+speculative_viewing_prompt = """
 Use tool calls to read {{speculated_views}}. When reading these, do not output anything but a tool call, no elaboration is needed."""
 
 prompt_wrapper = """
