@@ -4,7 +4,7 @@
 
 **Toml File Configuration:**
 
-ID, subagent description, multiline system prompt, header, speculative viewing prompt, prompt wrapper
+ID, agent description, multiline system prompt, header, speculative viewing prompt, prompt wrapper
 
 The header, speculative viewing prompt, and prompt wrapper are dynamically merged depending on whether or not chat turns must be injected in the middle.
 
@@ -12,7 +12,7 @@ The header, speculative viewing prompt, and prompt wrapper are dynamically merge
 
 Each agent holds its own task, children, and world (the files it accesses).
 
-**Data Store:**
+**Data Store / Rollout:**
 
 Store the agent metadata + history into a json file within .agent/task/agent_id.
 
@@ -24,7 +24,7 @@ Classes which wrap functions that run before the agent loop begins, to setup the
 
 Example: Providers: Substitutes filler tokens in the text with actual values. Can also substitute with a sentence instead of a value by appending a *, ie: {{banned_tools_primary*}}.
 
-Avaliable: {{os_info}}, {{date}}, {{full_dir_and_elements}}, {{full_dir}}, {{folders_dir}}, {{top_level_dir}}, {{avaliable_subagents}}, {{avaliable_tools_primary}}, {{avaliable_tools_secondary}}, {{banned_tools_primary}}, {{banned_tools_secondary}, {{speculated_element_names}}, {{speculated_element_blocks}}, {{hint_element_names}} …
+Avaliable: {{os_info}}, {{date}}, {{full_dir_and_elements}}, {{full_dir}}, {{folders_dir}}, {{top_level_dir}}, {{avaliable_subagent_pipelines}}, {{avaliable_tools_primary}}, {{avaliable_tools_secondary}}, {{banned_tools_primary}}, {{banned_tools_secondary}, {{speculated_element_names}}, {{speculated_element_blocks}}, {{hint_element_names}} …
 
 Example 2: Prefill-Providers: Similar to the provider, but instead works by directly modding the chat instead of substituting tokens.
 
@@ -34,9 +34,9 @@ Classes which wrap functions that run in the agent loop right after the LLM resp
 
 Example: Tool calls
 
-**Primary + Secondary Tools + Subagents:**
+**Primary + Secondary Tools + Subagent pipelines:**
 
-The agent gets a persistent set of primary tools (search, view, delegate, tools, bash) and secondary tools (view_lines, open, edit … etc), where the secondary tools are routed via the tools tool (which lists tools when used). Connected subagents are also listed with delegate, and can be spawned with that tool. Certain tools may be disabled (and block execution) for certain subagents.
+The agent gets a persistent set of primary tools (search, view, delegate, tools, bash) and secondary tools (view_lines, open, edit … etc), where the secondary tools are routed via the tools tool (which lists tools when used). Connected subagent pipelines are also listed with delegate, and can be spawned with that tool. Certain tools may be disabled (and block execution) for certain agents.
 
 **Architecture:**
 
@@ -75,7 +75,7 @@ We can also consider linear functions instead of multiplicative ones, where R is
 
 Assuming that the fixed prefix (the system prompt + the part of the prompt above the inserted elements) is static, our prefix takes the form of a tree where each element is a node. The prefix must be retrieved from the top of the tree downwards, but we can stop at any point midway. We build the tree according to the four possible outcomes listed above. We can also attempt to track separate statistics to predict the future reward.
 
+# TBA:
 - Tree-sitter elements
 - Repomap
-
-- Agent pipeline composition
+- Agent pipeline composition: Use an abstract pipeline that gets implemented for specific pipeline types
