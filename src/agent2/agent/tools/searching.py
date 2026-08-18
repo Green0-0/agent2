@@ -1,16 +1,23 @@
-def multisearch(regexes: str):
+from __future__ import annotations
+from agent2.agent.core import Session
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agent2.agent.core import Agent
+
+def multisearch(session: Session, agent: Agent, regexes: str):
     ...
     
-def search(regex: str):
+def search(session: Session, agent: Agent, regex: str):
     ...
     
-def list_folder(folder_path: str):
+def list_folder(session: Session, agent: Agent, folder_path: str):
     ...
 
-def search_folders_multi(regexes: str):
+def search_folders_multi(session: Session, agent: Agent, regexes: str):
     ...
 
-def search_folders(regex: str):
+def search_folders(session: Session, agent: Agent, regex: str):
     ...
     
     

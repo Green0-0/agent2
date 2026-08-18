@@ -1,13 +1,9 @@
-from typing import Optional
-from agent2.code_parser.dataclasses import CodeNode
-from agent2.code_parser.dataclasses import CodeBlock
-from agent2.code_parser.dataclasses import CodeState
-import textwrap
-import ast
 import tree_sitter
 import tree_sitter_python
-from typing import List, Any
+import textwrap
+from typing import Any, List, Optional
 from agent2.code_parser.languages.abc import LanguageAdapter
+from agent2.code_parser.objects import CodeBlock, CodeNode, CodeState
 
 class PythonLanguageAdapter(LanguageAdapter):
     """Adapter executing Python Tree-sitter queries and AST safety checks."""
@@ -18,6 +14,14 @@ class PythonLanguageAdapter(LanguageAdapter):
     @property
     def extensions(self) -> List[str]:
         return [".py", ".pyi"]
+
+    @property
+    def ignored_directories(self) -> List[str]:
+        return ["__pycache__", ".pytest_cache"]
+
+    @property
+    def ignored_extensions(self) -> List[str]:
+        return [".pyc", ".pyo", ".pyd"]
 
     def __init__(self):
         self.ts_lang = tree_sitter.Language(tree_sitter_python.language())

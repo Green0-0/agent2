@@ -1,5 +1,5 @@
 from typing import Literal
-from agent2.code_parser.dataclasses import CodeNode
+from agent2.code_parser.objects import CodeNode
 
 def apply_line_prefixes(text: str, starting_row_0_indexed: int, spacer: str = "| ") -> str:
     """Injects explicit visual line numbers (e.g., '42 | def foo():').

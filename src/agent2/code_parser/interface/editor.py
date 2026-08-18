@@ -1,7 +1,7 @@
 from typing import Literal
-from agent2.code_parser.dataclasses import CodeEdit
-from agent2.code_parser.code_file import CodeFile
-from agent2.code_parser.dataclasses import CodeNode
+from agent2.code_parser.objects import CodeEdit
+from agent2.code_parser.file import CodeFile
+from agent2.code_parser.objects import CodeNode
 from typing import List, Tuple
 
 def commit_mutations(code_file: CodeFile, updates: List[Tuple[str, str]]) -> None:
@@ -24,7 +24,7 @@ def commit_mutations(code_file: CodeFile, updates: List[Tuple[str, str]]) -> Non
         normalized_text = code_file.adapter.attempt_fix_formatting(
             new_text, 
             sym.body_block, 
-            code_file.buffer
+            code_file.current_state
         )
         
         edit_payload = CodeEdit(

@@ -1,12 +1,19 @@
+from __future__ import annotations
 import json
 import tomllib
-from __future__ import annotations
 from pathlib import Path
 from collections import OrderedDict
 from datetime import datetime
 from typing import Any, Optional
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
+
+from agent2.code_parser.file import File, CodeFile
+from agent2.code_parser.languages.adapters import (
+    get_adapter_for_extension, 
+    get_all_ignored_directories, 
+    get_all_ignored_extensions
+)
 
 
 class Rollout(BaseModel):
@@ -113,21 +120,25 @@ class Session:
     Represents the global session state, including loaded configurations and active rollouts.
     Acts as the main registry and entrypoint before pipelines are executed.
     """
-    def __init__(self, config_dir: str = "config/agents", rollout_dir: str = ".agent2/task") -> None:
+    def __init__(self, project_dir: str, config_dir: str = "config/agents", rollout_dir: str = ".agent2/task") -> None:
         """
         Initializes the Session by loading AgentConfigs from TOML files and existing Rollouts from JSON files.
         
         Args:
+            project_dir (str): The root directory of the project.
             config_dir (str, optional): The directory containing agent TOML configs. Defaults to "config/agents".
             rollout_dir (str, optional): The directory containing JSON task rollouts. Defaults to ".agent2/task".
         """
         self.configs: OrderedDict[str, AgentConfig] = OrderedDict()
         self.datastore: OrderedDict[str, Rollout] = OrderedDict()
+        self.files: OrderedDict[str, File] = OrderedDict()
         
         config_path = Path(config_dir)
         rollout_path = Path(rollout_dir)
+        project_path = Path(project_dir)
         assert config_path.exists() and config_path.is_dir(), f"Config directory {config_path} does not exist or is not a directory" 
         assert rollout_path.exists() and rollout_path.is_dir(), f"Rollout directory {rollout_path} does not exist or is not a directory" 
+        assert project_path.exists() and project_path.is_dir(), f"Project directory {project_path} does not exist or is not a directory"
 
         for file_path in config_path.glob("*.toml"):
             with open(file_path, "rb") as f:
@@ -140,3 +151,24 @@ class Session:
                 data = json.load(f)
                 store = Rollout.model_validate(data)
                 self.datastore[store.agent_id] = store
+                
+        ignored_dirs = get_all_ignored_directories()
+        ignored_exts = get_all_ignored_extensions()
+
+        for file_path in project_path.rglob("*"):
+            if file_path.is_file():
+                if any(part.startswith('.') or part in ignored_dirs for part in file_path.parts):
+                    continue
+                if file_path.suffix in ignored_exts:
+                    continue
+                try:
+                    initial_bytes = file_path.read_bytes()
+                    str_path = str(file_path)
+                    
+                    adapter = get_adapter_for_extension(file_path.suffix)
+                    if adapter:
+                        self.files[str_path] = CodeFile(str_path, adapter, initial_bytes)
+                    else:
+                        self.files[str_path] = File(str_path, initial_bytes)
+                except Exception as e:
+                    print(f"Failed to load file {file_path}: {e}")

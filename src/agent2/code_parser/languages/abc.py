@@ -1,8 +1,8 @@
 from typing import Optional
-from agent2.code_parser.dataclasses import CodeBlock
+from agent2.code_parser.objects import CodeBlock
 from typing import List, Any
 from abc import ABC, abstractmethod
-from agent2.code_parser.dataclasses import CodeNode, CodeState
+from agent2.code_parser.objects import CodeNode, CodeState
 
 class LanguageAdapter(ABC):
     """
@@ -18,6 +18,16 @@ class LanguageAdapter(ABC):
     @abstractmethod
     def extensions(self) -> List[str]:
         pass
+
+    @property
+    def ignored_directories(self) -> List[str]:
+        """Returns a list of directory names that should be ignored."""
+        return []
+
+    @property
+    def ignored_extensions(self) -> List[str]:
+        """Returns a list of file extensions that should be ignored."""
+        return []
 
     @abstractmethod
     def extract_nodes(self, root_node: Any, code_state: CodeState) -> List[CodeNode]:

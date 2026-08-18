@@ -82,22 +82,7 @@ class GenericDescriptionBuilder(DescriptionBuilder):
 
 
 class Tool:
-    """
-    Thin wrapper that converts Python functions into agent tools.
-
-    Attributes
-    ----------
-    func            : Callable
-        The underlying Python function executed when the tool is invoked.
-    name            : str
-        `func.__name__`.
-    description     : str | None
-        Plain-language summary extracted from the docstring.
-    examples        : List[Tuple[str, Dict[str, Any]]]
-        List of (task_description, tool_call_json) tuples extracted from the docstring.
-    openai_schema   : dict
-        The OpenAI-compatible tool schema generated from the function.
-    """
+    """Thin wrapper that converts Python functions into agent tools."""
 
     func: Callable
     name: str
