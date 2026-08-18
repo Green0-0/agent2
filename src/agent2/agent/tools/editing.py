@@ -1,131 +1,158 @@
 def move_files(paths: str, make_dir: bool = False):
-    """Takes as input a list of comma separated movement paths, which are formatted {original_location}>{new_location}, ensuring that there is exactly one angle bracket pointing right per file movement. Renaming files is also possible. If make_dir is true, missing directories will be created.
+    """Move files or directories based on a list of comma-separated movement paths.
     
-    For example:
-    ``"scripts/script_1.py>new_scripts/script_2.py, folder/pic.png>folder/picture.png", True``
-    Moves script_1 and renames it to script_2 (creating the folder if it doesn't exist) and renames pic to picture."""
+    Each path must be formatted as {original_location}>{new_location}, ensuring there is exactly one angle bracket pointing right per movement. Renaming files is also supported.
+    
+    Args:
+        paths: A list of comma-separated movement paths.
+        make_dir: If true, missing directories will be created automatically.
+
+    Examples:
+        Task: Move script_1 and rename it to script_2 (creating the folder if it doesn't exist), and rename pic to picture.
+        Tool Call: {"paths": "scripts/script_1.py>new_scripts/script_2.py, folder/pic.png>folder/picture.png", "make_dir": true}
+    """
+    pass
 
 
 def make_empty_files(file_paths: str, make_dir: bool = False):
-    """Takes as input a list of comma separated file paths, of which an empty file is created at each. If make_dir is true, missing directories will be created.
+    """Create an empty file at each specified comma-separated file path.
     
-    For example:
-    ``"scripts/script_1.py, scripts/script_2.py", True``
-    Creates empty files script_1.py and script_2.py in the scripts folder. The scripts folder is created if it doesn't exist."""
-    ...
+    Args:
+        file_paths: A list of comma-separated file paths to create.
+        make_dir: If true, missing directories will be created automatically.
+
+    Examples:
+        Task: Create empty files script_1.py and script_2.py in the scripts folder. Create the scripts folder if it doesn't exist.
+        Tool Call: {"file_paths": "scripts/script_1.py, scripts/script_2.py", "make_dir": true}
+    """
+    pass
 
 
 def replace_file(file_path: str, new_content: str):
-    """Takes as input a file path, and replaces its contents. 
-        
-    For example:
-    ``"scripts/my_script.py", "import ..."``
-    Replaces the script my_script with the new script."""
-    ...
+    """Replace the entire contents of a file with the provided string.
+    
+    Args:
+        file_path: The file path to replace the contents of.
+        new_content: The new contents of the file.
+
+    Examples:
+        Task: Replace the script my_script.py with the new script.
+        Tool Call: {"file_path": "scripts/my_script.py", "new_content": "import ..."}
+    """
+    pass
     
     
 def replace_element(file_path: str, element_path: str, new_content: str):
-    """Takes as input an element path at a given file path, and replaces its contents.
+    """Replace the contents of a specific code element (e.g. class or function) at a given file path.
     
-    For example:
-    ``"scripts/my_script.py" "my_class.inner_function" "def inner_function..."``
-    Would replace the inner function in my_class of my_script.py with the specified code specified.
-    
-    If specific lines need to be edited, or if a file extension is not supported, lookup the replace_lines tool instead.
+    If specific lines need to be edited, or if a file extension is not supported, use the replace_lines tool instead.
+
+    Args:
+        file_path: The file path to replace the element in.
+        element_path: The path of the element within the file (e.g. 'my_class.inner_function').
+        new_content: The new contents of the element.
+
+    Examples:
+        Task: Replace the inner function in my_class of my_script.py with the specified code.
+        Tool Call: {"file_path": "scripts/my_script.py", "element_path": "my_class.inner_function", "new_content": "def inner_function..."}
     """
-    ...
+    pass
     
 def replace_element_at(file_path: str, line: int, new_content: str):
-    """Takes as input a line number at a given file path, and replaces the innermost element at that line with the contents.
+    """Replace the innermost code element located at a specific line number within a file.
     
-    For example:
-    ``"scripts/my_script.py" 10 "def inner_function..."``
-    Would replace the element present at line 10 of my_script.py with the specified code.
-    
-    If specific lines need to be edited, or if a file extension is not supported, lookup the replace_lines tool instead.
+    If specific lines need to be edited, or if a file extension is not supported, use the replace_lines tool instead.
+
+    Args:
+        file_path: The file path containing the element to replace.
+        line: The line number where the target element is located.
+        new_content: The new contents of the element.
+
+    Examples:
+        Task: Replace the element present at line 10 of my_script.py with the specified code.
+        Tool Call: {"file_path": "scripts/my_script.py", "line": 10, "new_content": "def inner_function..."}
     """
     # WARNING: THIS SHOULD NOT BE USED, AS A MISFIRE FROM WRITING THE WRONG LINE WILL DESTROY THE ELEMENT
-    ...
+    pass
     
 def replace_lines(file_path: str, line_start: int, line_end: int, new_content: str):    
-    """Takes as input a file path and the start/end line range, and replaces its contents.
+    """Replace a specific start/end line range within a file with the provided contents.
     
-    For example:
-    ``"scripts/my_script.py", 100, 200, "def inner_function..."``
-    Would replace lines 100-200 of my_script.py with whatever code specified.
+    Args:
+        file_path: The file path to replace the lines in.
+        line_start: The starting line number (inclusive).
+        line_end: The ending line number (inclusive).
+        new_content: The new contents for the specified line range.
+
+    Examples:
+        Task: Replace lines 100-200 of my_script.py with the specified code.
+        Tool Call: {"file_path": "scripts/my_script.py", "line_start": 100, "line_end": 200, "new_content": "def inner_function..."}
     """
-    ...
+    pass
 
 
 def open_lines(file_path: str, line_start: int, line_end: int):
-    """Opens an editing window at the specified file_path and the given start/end line range. The editing window first displays the file and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
+    """Open an interactive editing window displaying the specified start/end line range of a file.
     
-    For example:
-    ``"scripts/my_script.py" "100" "200"``
-    Will show lines 100-200 of my_script. 
-    Next, outputting a cancellation message, such as:
-    "Accidentally specified the wrong lines to edit. Should edit lines 200-300 instead because ..."
-    or a code block in markdown:
-    ```python
-    def inner_function()
-        ...
-    ```
-    will close the edit window and show either the diff or cancellation message.
+    The editing window will display the lines and wait for a replacement code block or a cancellation reason. Upon receiving either, the window closes and shows a diff or the cancellation message.
+    
+    Args:
+        file_path: The file path to open the lines of.
+        line_start: The starting line number.
+        line_end: The ending line number.
+
+    Examples:
+        Task: Display lines 100-200 of my_script.py in the editing window.
+        Tool Call: {"file_path": "scripts/my_script.py", "line_start": 100, "line_end": 200}
     """
+    pass
 
 
 def open_file(file_path: str):
-    """Opens an editing window at the specified file_path. The editing window first displays the file and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
+    """Open an interactive editing window displaying the entire contents of a file.
     
-    For example:
-    ``"scripts/my_script.py"``
-    Will show the entirety of my_script. 
-    Next, outputting a cancellation message, such as:
-    "Accidentally specified the wrong file to edit. Should edit script_2 instead because ..."
-    or a code block in markdown:
-    ```python
-    def inner_function()
-        ...
-    ```
-    will close the edit window and show either the diff or cancellation message.
+    The editing window will display the file and wait for a replacement code block or a cancellation reason. Upon receiving either, the window closes and shows a diff or the cancellation message.
+    
+    Args:
+        file_path: The file path to open.
+
+    Examples:
+        Task: Display the entirety of my_script.py in the editing window.
+        Tool Call: {"file_path": "scripts/my_script.py"}
     """
-    ...
+    pass
     
     
 def open_element(file_path: str, element_path: str):
-    """Opens an editing window at the specified file_path and the given element_path. The editing window first displays the element and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
+    """Open an interactive editing window displaying a specific code element from a file.
     
-    For example:
-    ``"scripts/my_script.py" "my_class"``
-    Will show the entirety of my_class. 
-    Next, outputting a cancellation message, such as:
-    "Accidentally specified the wrong element to edit. Should edit inner_function instead because ..."
-    or a code block in markdown:
-    ```python
-    class my_class:
-        ...
-    ```
-    will close the edit window and show either the diff or cancellation message.
+    The editing window will display the element and wait for a replacement code block or a cancellation reason. Upon receiving either, the window closes and shows a diff or the cancellation message.
     
-    If specific lines need to be edited, or if a file extension is not supported, lookup the open_lines tool instead.
+    If specific lines need to be edited, or if a file extension is not supported, use the open_lines tool instead.
+
+    Args:
+        file_path: The file path to open the element of.
+        element_path: The element path within the file.
+
+    Examples:
+        Task: Display the entirety of my_class in the editing window.
+        Tool Call: {"file_path": "scripts/my_script.py", "element_path": "my_class"}
     """
-    ...
+    pass
     
-def open_element_at(file_path: str, element_path: str):
-    """Opens an editing window at the specified file_path and the innermost element at the given line. The editing window first displays the element and then looks for a replacement code block or a cancellation reason. In either case, the editing window then closes, and the previously shown code is hidden (removed from context), only the diff or cancellation reason is shown. 
+def open_element_at(file_path: str, line: int):
+    """Open an interactive editing window displaying the innermost code element found at a specific line.
     
-    For example:
-    ``"scripts/my_script.py" 10``
-    Will show the entirety the element at line 10. 
-    Next, outputting a cancellation message, such as:
-    "Accidentally specified the wrong element to edit. Should edit inner_function instead because ..."
-    or a code block in markdown:
-    ```python
-    class my_class:
-        ...
-    ```
-    will close the edit window and show either the diff or cancellation message.
+    The editing window will display the element and wait for a replacement code block or a cancellation reason. Upon receiving either, the window closes and shows a diff or the cancellation message.
     
-    If specific lines need to be edited, or if a file extension is not supported, lookup the open_lines tool instead.
+    If specific lines need to be edited, or if a file extension is not supported, use the open_lines tool instead.
+
+    Args:
+        file_path: The file path to open the element of.
+        line: The line number where the target element is located.
+
+    Examples:
+        Task: Display the element at line 10 in the editing window.
+        Tool Call: {"file_path": "scripts/my_script.py", "line": 10}
     """
-    ...
+    pass

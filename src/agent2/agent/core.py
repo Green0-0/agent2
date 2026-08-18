@@ -7,6 +7,7 @@ from typing import Any, Optional
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
 
+
 class Rollout(BaseModel):
     """
     Represents the data store and history for a specific agent task execution.
@@ -21,6 +22,7 @@ class Rollout(BaseModel):
     raw_chat: list[Any] = Field(default_factory=list)
     action_history: list[Any] = Field(default_factory=list)
 
+
 class AgentConfig(BaseModel):
     """
     Configuration for an agent, typically loaded from a TOML file.
@@ -34,6 +36,7 @@ class AgentConfig(BaseModel):
     speculative_viewing_prompt: str
     prompt_wrapper: str
 
+
 class Constructor(ABC):
     """Classes which wrap functions that run before the agent loop begins, to setup the agent."""
     @abstractmethod
@@ -45,6 +48,7 @@ class Constructor(ABC):
             agent (Agent): The agent instance to be set up.
         """
         pass
+
 
 class Hook(ABC):
     """Classes which wrap functions that run in the agent loop right after the LLM response is parsed.
@@ -63,21 +67,6 @@ class Hook(ABC):
         """
         pass
 
-class Tool(ABC):
-    """Primary and Secondary tools available to the agent."""
-    @abstractmethod
-    def execute(self, *args: Any, **kwargs: Any) -> Any:
-        """
-        Execute the tool's core functionality.
-        
-        Args:
-            *args (Any): Positional arguments for the tool.
-            **kwargs (Any): Keyword arguments for the tool.
-            
-        Returns:
-            Any: The result of the tool execution.
-        """
-        pass
 
 class Pipeline(ABC):
     """Abstract pipeline that gets implemented for specific pipeline types."""
@@ -94,6 +83,7 @@ class Pipeline(ABC):
         """
         pass
     
+
 class Agent:
     """
     Represents an active agent in the system.
@@ -115,6 +105,7 @@ class Agent:
             date_deployed=datetime.now().isoformat(),
             parent=parent_id
         )
+
 
 class Session:
     """
