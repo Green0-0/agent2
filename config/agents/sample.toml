@@ -1,5 +1,6 @@
-id = "sample_agent"
+subagent_name = "sample_agent"
 subagent_description = "A sample file reading and project analysis agent"
+model = "gpt-5"
 
 system_prompt = """
 {{tools}}

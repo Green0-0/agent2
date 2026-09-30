@@ -1,9 +1,9 @@
 from __future__ import annotations
-from agent2.agent.core import Session
+from agent2.core.session import Session
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent2.agent.core import Agent
+    from agent2.core.agent import Agent
 
 def view(session: Session, agent: Agent, paths: str):
     """View the contents of multiple files or elements specified by a comma-separated list of paths.
@@ -90,7 +90,7 @@ def view_file(session: Session, agent: Agent, file_path: str, full: bool = False
         Task: Show an overview of script_1.py.
         Tool Call: {"file_path": "scripts/script_1.py", "full": false}
     """
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     text = file.current_state.bytes.decode('utf-8', errors='replace')
     if not full:
@@ -149,7 +149,7 @@ def view_at(session: Session, agent: Agent, file_path: str, line: int, full: boo
         Task: Show an overview of the innermost element found at line 200 in script_1.py. It may be reduced to an overview if its content is too long.
         Tool Call: {"file_path": "scripts/script_1.py", "line": 200, "full": false}
     """
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     if hasattr(file, 'code_nodes'):
         best_node, best_len = None, float('inf')
@@ -191,7 +191,7 @@ def view_element(session: Session, agent: Agent, file_path: str, element_path: s
         Task: Show an overview of the function my_func inside my_class. It may be reduced to an overview if its content is too long.
         Tool Call: {"file_path": "scripts/script_1.py", "element_path": "my_class.my_func", "full": false}
     """
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     if not hasattr(file, 'code_nodes'): return f"Error: {file_path} is not a parsed code file."
     node = file.code_nodes.get(element_path)
@@ -239,7 +239,7 @@ def view_lines(session: Session, agent: Agent, file_path: str, line_start: int, 
         Task: Show lines 100-200 from script_1.py.
         Tool Call: {"file_path": "scripts/script_1.py", "line_start": 100, "line_end": 200}
     """
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     start_byte = file.current_state.get_line_byte_range(line_start)[0]
     end_byte = file.current_state.get_line_byte_range(line_end)[1]

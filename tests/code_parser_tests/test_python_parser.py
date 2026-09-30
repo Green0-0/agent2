@@ -2,8 +2,8 @@ import os
 import pytest
 from pathlib import Path
 
-from agent2.code_parser.code_file import CodeFile
-from agent2.code_parser.dataclasses import CodeEdit
+from agent2.code_parser.file import CodeFile
+from agent2.code_parser.objects import CodeEdit
 from agent2.code_parser.languages.python import PythonLanguageAdapter
 from agent2.code_parser.interface.renderer import view_code_node_automatic, view_code_node_full
 
@@ -47,7 +47,7 @@ def print_render_report(title: str, text: str):
 
 def test_syntax_edge_cases_extraction(python_adapter):
     source = read_script("syntax_edge_case.py")
-    code_file = CodeFile(python_adapter, source)
+    code_file = CodeFile("syntax_edge_case.py", python_adapter, source)
     
     nodes = code_file.code_nodes
     
@@ -107,7 +107,7 @@ def test_syntax_edge_cases_extraction(python_adapter):
 
 def test_enterprise_framework_extraction(python_adapter):
     source = read_script("enterprise_framework.py")
-    code_file = CodeFile(python_adapter, source)
+    code_file = CodeFile("enterprise_framework.py", python_adapter, source)
     nodes = code_file.code_nodes
     
     assert "log_calls.57" in nodes
@@ -147,7 +147,7 @@ def test_enterprise_framework_extraction(python_adapter):
 
 def test_data_processing_pipeline_extraction(python_adapter):
     source = read_script("data_processing_pipeline.py")
-    code_file = CodeFile(python_adapter, source)
+    code_file = CodeFile("data_processing_pipeline.py", python_adapter, source)
     nodes = code_file.code_nodes
     
     assert "pipeline_stage.19" in nodes
@@ -164,7 +164,7 @@ def test_data_processing_pipeline_extraction(python_adapter):
 
 def test_apply_edit_and_reparse(python_adapter):
     source = b"def test():\n    pass\n"
-    code_file = CodeFile(python_adapter, source)
+    code_file = CodeFile("edit_test.py", python_adapter, source)
     
     node = code_file.code_nodes["test.1"]
     
@@ -179,12 +179,12 @@ def test_apply_edit_and_reparse(python_adapter):
     
     code_file.apply_edit_and_reparse(edit)
     
-    assert b"return True" in code_file.buffer.bytes
+    assert b"return True" in code_file.current_state.bytes
     assert "test.1" in code_file.code_nodes
 
 def test_view_code_node_automatic(python_adapter):
     source = read_script("enterprise_framework.py")
-    code_file = CodeFile(python_adapter, source)
+    code_file = CodeFile("enterprise_framework.py", python_adapter, source)
     
     node = code_file.code_nodes["ServiceEntity.265"]
     
@@ -216,4 +216,3 @@ def test_view_code_node_automatic(python_adapter):
     view_middle = view_code_node_automatic(node, source, symbol_limit=middle_limit, ceiling_behavior="closer")
     print_render_report(f"AUTOMATIC VIEW (limit={middle_limit}, closer)", view_middle)
     assert "BODY HIDDEN" in view_middle or len(view_middle.split()) <= full_len
-

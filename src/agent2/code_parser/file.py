@@ -38,7 +38,7 @@ class CodeFile(File):
         self.adapter = adapter        
         self.tree: Optional[Any] = None
         self.code_nodes: Dict[str, CodeNode] = {}
-        if initial_bytes:
+        if initial_bytes is not None:
             self.parse_to_bytes(initial_bytes)
 
     def parse_to_bytes(self, new_bytes: bytes, old_tree: Optional[Any] = None, sync_original: bool = True) -> CodeState:

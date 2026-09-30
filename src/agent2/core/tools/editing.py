@@ -1,12 +1,10 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from agent2.agent.core import Session
-from agent2.code_parser.file import File, CodeFile
-from agent2.code_parser.objects import CodeEdit, CodeState
-from agent2.code_parser.languages.adapters import get_adapter_for_extension
+from agent2.core.session import Session
+from agent2.code_parser.objects import CodeEdit
 
 if TYPE_CHECKING:
-    from agent2.agent.core import Agent
+    from agent2.core.agent import Agent
 
 
 def move_files(session: Session, agent: Agent, paths: str, make_dir: bool = False):
@@ -29,13 +27,12 @@ def move_files(session: Session, agent: Agent, paths: str, make_dir: bool = Fals
             continue
         src, dst = move_path.split(">", 1)
         src, dst = src.strip(), dst.strip()
-        file = session.files.get(src)
+        file = agent.workspace.read_file(src)
         if not file:
             results.append(f"Error: Source file {src} not found.")
             continue
-        file.path = dst
-        del session.files[src]
-        session.files[dst] = file
+        agent.workspace.delete_file(src)
+        agent.workspace.write_file(dst, file.current_state.bytes)
         results.append(f"Moved {src} to {dst} in memory.")
     return "\n".join(results)
 
@@ -53,11 +50,7 @@ def make_empty_files(session: Session, agent: Agent, file_paths: str, make_dir: 
     """
     results = []
     for path in [p.strip() for p in file_paths.split(',') if p.strip()]:
-        adapter = get_adapter_for_extension(path)
-        if adapter:
-            session.files[path] = CodeFile(path, adapter, b"")
-        else:
-            session.files[path] = File(path, b"")
+        agent.workspace.write_file(path, b"")
         results.append(f"Created empty file {path} in memory.")
     return "\n".join(results)
 
@@ -73,14 +66,9 @@ def replace_file(session: Session, agent: Agent, file_path: str, new_content: st
         Task: Replace the script my_script.py with the new script.
         Tool Call: {"file_path": "scripts/my_script.py", "new_content": "import ..."}
     """
-    from agent2.code_parser.objects import CodeState
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
-    new_bytes = new_content.encode('utf-8')
-    if hasattr(file, 'parse_to_bytes'):
-        file.parse_to_bytes(new_bytes, sync_original=False)
-    else:
-        file.current_state = CodeState(new_bytes)
+    agent.workspace.write_file(file_path, new_content.encode('utf-8'))
     return f"Replaced content of {file_path}."
     
     
@@ -98,7 +86,7 @@ def replace_element(session: Session, agent: Agent, file_path: str, element_path
         Task: Replace the inner function in my_class of my_script.py with the specified code.
         Tool Call: {"file_path": "scripts/my_script.py", "element_path": "my_class.inner_function", "new_content": "def inner_function..."}
     """
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     if not hasattr(file, 'code_nodes'): return f"Error: {file_path} is not a parsed code file."
     node = file.code_nodes.get(element_path)
@@ -110,7 +98,7 @@ def replace_element(session: Session, agent: Agent, file_path: str, element_path
         end_point=node.full_block.end_point,
         new_text=new_content.encode('utf-8')
     )
-    file.apply_edit_and_reparse(edit)
+    agent.workspace.apply_edit(file_path, edit)
     return f"Replaced element {element_path} in {file_path}."
     
 def replace_element_at(session: Session, agent: Agent, file_path: str, line: int, new_content: str):
@@ -127,8 +115,7 @@ def replace_element_at(session: Session, agent: Agent, file_path: str, line: int
         Task: Replace the element present at line 10 of my_script.py with the specified code.
         Tool Call: {"file_path": "scripts/my_script.py", "line": 10, "new_content": "def inner_function..."}
     """
-    # WARNING: THIS SHOULD NOT BE USED, AS A MISFIRE FROM WRITING THE WRONG LINE WILL DESTROY THE ELEMENT
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     if not hasattr(file, 'code_nodes'): return f"Error: {file_path} is not a parsed code file."
     best_node, best_len = None, float('inf')
@@ -147,7 +134,7 @@ def replace_element_at(session: Session, agent: Agent, file_path: str, line: int
         end_point=best_node.full_block.end_point,
         new_text=new_content.encode('utf-8')
     )
-    file.apply_edit_and_reparse(edit)
+    agent.workspace.apply_edit(file_path, edit)
     return f"Replaced element at line {line} ({best_node.llm_path}) in {file_path}."
     
 def replace_lines(session: Session, agent: Agent, file_path: str, line_start: int, line_end: int, new_content: str):    
@@ -163,28 +150,19 @@ def replace_lines(session: Session, agent: Agent, file_path: str, line_start: in
         Task: Replace lines 100-200 of my_script.py with the specified code.
         Tool Call: {"file_path": "scripts/my_script.py", "line_start": 100, "line_end": 200, "new_content": "def inner_function..."}
     """
-    file = session.files.get(file_path)
+    file = agent.workspace.read_file(file_path)
     if not file: return f"Error: File {file_path} not found."
     start_byte = file.current_state.get_line_byte_range(line_start)[0]
     end_byte = file.current_state.get_line_byte_range(line_end)[1]
-    if hasattr(file, 'apply_edit_and_reparse'):
-        start_point = (line_start - 1, 0)
-        idx = line_end - 1
-        starts = file.current_state._line_starts
-        if idx >= len(starts): idx = len(starts) - 1
-        col = end_byte - starts[idx]
-        edit = CodeEdit(
-            start_byte=start_byte,
-            end_byte=end_byte,
-            start_point=start_point,
-            end_point=(idx, col),
-            new_text=new_content.encode('utf-8')
-        )
-        file.apply_edit_and_reparse(edit)
-    else:
-        old_bytes = file.current_state.bytes
-        new_bytes = old_bytes[:start_byte] + new_content.encode('utf-8') + old_bytes[end_byte:]
-        file.current_state = CodeState(new_bytes)
+    idx = min(line_end - 1, len(file.current_state._line_starts) - 1)
+    edit = CodeEdit(
+        start_byte=start_byte,
+        end_byte=end_byte,
+        start_point=(line_start - 1, 0),
+        end_point=(idx, end_byte - file.current_state._line_starts[idx]),
+        new_text=new_content.encode('utf-8')
+    )
+    agent.workspace.apply_edit(file_path, edit)
     return f"Replaced lines {line_start}-{line_end} in {file_path}."
 
 

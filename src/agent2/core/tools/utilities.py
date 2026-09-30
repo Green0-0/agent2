@@ -1,9 +1,9 @@
 from __future__ import annotations
-from agent2.agent.core import Session
+from agent2.core.session import Session
 from typing import Optional, Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from agent2.agent.core import Agent
+    from agent2.core.agent import Agent
 
 
 def delegate(session: Session, agent: Agent, subagent_id: str, instructions: str, folder_path: Optional[str] = None):
