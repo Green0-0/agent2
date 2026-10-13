@@ -5,10 +5,20 @@ from types import SimpleNamespace
 
 import pytest
 
+from agent2.core.agent import Agent
+from agent2.core.constructors import DefaultConstructor
+from agent2.core.hooks import ToolCallHook
 from agent2.core.objects import Rollout
 from agent2.core.pipeline import BasicMultiAgentPipeline, SingleAgentPipeline
 from agent2.core.session import Session
-from agent2.core.tools.editing import replace_file, replace_lines
+from agent2.core.tools.editing import (
+    open_element,
+    open_element_at,
+    open_file,
+    open_lines,
+    replace_file,
+    replace_lines,
+)
 from agent2.core.tools.tool import Tool
 from agent2.core.workspace import Workspace
 
@@ -323,3 +333,249 @@ def test_multi_agent_pipeline_keeps_other_candidates_after_one_fails(tmp_path):
     assert pipeline.errors == [None, None, None, None, "candidate failed"]
     assert len(pipeline.diffs) == 5
     assert "STATUS: failed: candidate failed" in client.requests[-1]["messages"][-1]["content"]
+
+
+def test_open_file_routes_and_scrubs_its_continuation(tmp_path):
+    (tmp_path / "main.txt").write_text("old\n", encoding="utf-8")
+    call = SimpleNamespace(
+        id="open-1",
+        function=SimpleNamespace(name="open_file", arguments=json.dumps({"file_path": "main.txt"})),
+    )
+    client = FakeClient([
+        FakeMessage(tool_calls=[call]),
+        FakeMessage(content="```text\nnew\n```"),
+        FakeMessage(content="done"),
+    ])
+    session = Session(tmp_path)
+    workspace = Workspace(session)
+    pipeline = SingleAgentPipeline(
+        "config/agents/sample.toml",
+        "Edit main.txt",
+        rollout_id="open-file",
+        tools={"open_file": Tool(open_file)},
+        workspace=workspace,
+        client=client,
+    )
+
+    assert asyncio.run(pipeline.run(session)) == "done"
+    assert workspace.read_file("main.txt").current_state.bytes == b"new"
+    assert len(client.requests) == 3
+    assert client.requests[2]["messages"][-1]["role"] == "user"
+    assert "Edited main.txt" in client.requests[2]["messages"][-1]["content"]
+    assert not any(
+        message.get("role") == "assistant" and message.get("content") == "```text\nnew\n```"
+        for message in session.datastore["open-file"].raw_chat
+    )
+
+
+def test_continuations_can_chain_without_scrubbing_history(tmp_path):
+    events = []
+
+    def staged():
+        def first(message):
+            events.append(message.content)
+
+            def second(next_message):
+                events.append(next_message.content)
+
+            return "first handled", second
+
+        return "waiting", first
+
+    call = SimpleNamespace(
+        id="stage-1",
+        function=SimpleNamespace(name="staged", arguments="{}"),
+    )
+    client = FakeClient([
+        FakeMessage(tool_calls=[call]),
+        FakeMessage(content="stage one"),
+        FakeMessage(content="stage two"),
+        FakeMessage(content="done"),
+    ])
+    session = Session(tmp_path)
+    pipeline = SingleAgentPipeline(
+        "config/agents/sample.toml",
+        "Run stages",
+        rollout_id="stages",
+        tools={"staged": Tool(staged)},
+        client=client,
+    )
+
+    assert asyncio.run(pipeline.run(session)) == "done"
+    assert events == ["stage one", "stage two"]
+    chat = session.datastore["stages"].raw_chat
+    assert any(message.get("content") == "stage one" for message in chat)
+    assert any(message.get("content") == "stage two" for message in chat)
+
+
+def test_multiple_continuations_are_all_rejected(tmp_path):
+    called = []
+
+    def staged():
+        return "waiting", lambda message: called.append(message.content)
+
+    calls = [
+        SimpleNamespace(
+            id=f"stage-{number}",
+            function=SimpleNamespace(name="staged", arguments="{}"),
+        )
+        for number in range(2)
+    ]
+    client = FakeClient([
+        FakeMessage(tool_calls=calls),
+        FakeMessage(content="done"),
+    ])
+    session = Session(tmp_path)
+    pipeline = SingleAgentPipeline(
+        "config/agents/sample.toml",
+        "Run one stage",
+        rollout_id="multiple-stages",
+        tools={"staged": Tool(staged)},
+        client=client,
+    )
+
+    assert asyncio.run(pipeline.run(session)) == "done"
+    assert called == []
+    errors = [
+        message["content"] for message in client.requests[1]["messages"]
+        if message.get("role") == "tool"
+    ]
+    assert len(errors) == 2
+    assert all("Multiple continuation tools" in error for error in errors)
+
+
+def test_open_tools_share_ranges_and_reject_stale_edits(tmp_path):
+    (tmp_path / "main.py").write_text(
+        "def one():\n    return 1\n\ndef two():\n    return 2\n",
+        encoding="utf-8",
+    )
+    session = Session(tmp_path)
+    workspace = Workspace(session)
+    agent = SimpleNamespace(
+        session=session,
+        workspace=workspace,
+        rollout=SimpleNamespace(raw_chat=[]),
+    )
+
+    lines, finish_lines = open_lines(session, agent, "main.py", 2, 2)
+    element, _ = open_element(session, agent, "main.py", "one")
+    element_at, _ = open_element_at(session, agent, "main.py", 5)
+    assert "    return 1" in lines and "def one" not in lines
+    assert "def one" in element and "def two" not in element
+    assert "def two" in element_at and "def one" not in element_at
+
+    reply = FakeMessage(content="```python\n    return 3\n```")
+    agent.rollout.raw_chat.append(reply.model_dump())
+    finish_lines(reply)
+    assert b"def one():\n    return 3\n" in workspace.read_file("main.py").current_state.bytes
+
+    _, finish = open_file(session, agent, "main.py")
+    workspace.write_file("main.py", b"changed elsewhere\n")
+    reply = FakeMessage(content="```python\nreplacement\n```")
+    agent.rollout.raw_chat.append(reply.model_dump())
+    finish(reply)
+
+    assert workspace.read_file("main.py").current_state.bytes == b"changed elsewhere\n"
+    assert "changed after it was opened" in agent.rollout.raw_chat[-1]["content"]
+
+
+def test_agent_coalesces_adjacent_inbox_user_messages(tmp_path):
+    session = Session(tmp_path)
+    client = FakeClient([FakeMessage(content="done")])
+    agent = Agent(
+        session,
+        Workspace(session),
+        session.get_config("config/agents/sample.toml"),
+        "inbox",
+        "prompt",
+        [DefaultConstructor()],
+        [ToolCallHook()],
+        {},
+        client=client,
+    )
+
+    async def run():
+        await agent.receive_message("first")
+        await agent.receive_message("second")
+        await agent.receive_message("STOP")
+        return await agent.run()
+
+    assert asyncio.run(run()) == "done"
+    users = [message for message in client.requests[0]["messages"] if message["role"] == "user"]
+    assert users == [{"role": "user", "content": "prompt\n\nfirst\n\nsecond\n\nSTOP"}]
+
+
+def test_agent_defers_inbox_during_a_continuation(tmp_path):
+    session = Session(tmp_path)
+    client = FakeClient([
+        FakeMessage(content="continuation reply"),
+        FakeMessage(content="done"),
+    ])
+    agent = Agent(
+        session,
+        Workspace(session),
+        session.get_config("config/agents/sample.toml"),
+        "deferred-inbox",
+        "prompt",
+        [DefaultConstructor()],
+        [ToolCallHook()],
+        {},
+        client=client,
+    )
+    agent.pending_continuation = lambda message: None
+
+    async def run():
+        await agent.receive_message("first")
+        await agent.receive_message("second")
+        return await agent.run()
+
+    assert asyncio.run(run()) == "done"
+    assert all("first" not in message.get("content", "") for message in client.requests[0]["messages"])
+    assert client.requests[1]["messages"][-1] == {
+        "role": "user",
+        "content": "first\n\nsecond",
+    }
+
+
+def test_agent_rejects_unhandled_tool_calls(tmp_path):
+    call = SimpleNamespace(
+        id="unhandled-1",
+        function=SimpleNamespace(name="unused", arguments="{}"),
+    )
+    pipeline = SingleAgentPipeline(
+        "config/agents/sample.toml",
+        "Call a tool",
+        rollout_id="unhandled",
+        hooks=[],
+        tools={"unused": Tool(lambda: None)},
+        client=FakeClient([FakeMessage(tool_calls=[call])]),
+    )
+
+    with pytest.raises(RuntimeError, match="not consumed by a hook"):
+        asyncio.run(pipeline.run(Session(tmp_path)))
+
+
+def test_agent_message_channel_is_string_only_and_cannot_target_self(tmp_path):
+    session = Session(tmp_path)
+    agent = Agent(
+        session,
+        Workspace(session),
+        session.get_config("config/agents/sample.toml"),
+        "messages",
+        "prompt",
+        [DefaultConstructor()],
+        [],
+        {},
+        client=FakeClient([]),
+    )
+
+    async def check():
+        with pytest.raises(TypeError, match="must be strings"):
+            await agent.receive_message({"role": "system", "content": "spoofed"})
+        with pytest.raises(ValueError, match="cannot message themselves"):
+            await agent.send_message(agent.rollout.id, "self message")
+        await agent.stop()
+        return await agent.run()
+
+    assert asyncio.run(check()) is None
+    assert agent.client.requests == []

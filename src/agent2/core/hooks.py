@@ -1,8 +1,16 @@
 import json
 import inspect
-from typing import Any, Optional
-from agent2.core.objects import Hook
+from typing import Any
+from agent2.core.objects import Hook, HookResult, PendingContinuation
 from agent2.core.agent import Agent
+
+
+def _unpack(result: Any) -> tuple[str | None, PendingContinuation | None]:
+    if not isinstance(result, tuple):
+        return (None if result is None else str(result)), None
+    if len(result) != 2 or not callable(result[1]):
+        raise TypeError("Continuation tool results must be (content, callable)")
+    return str(result[0]), result[1]
 
 class ToolCallHook(Hook):
     """
@@ -10,12 +18,25 @@ class ToolCallHook(Hook):
     Tool wrapper in `agent.tools`, and directly appends the required OpenAI tool 
     messages to `agent.rollout.raw_chat`.
     """
-    def run(self, agent: Agent, response: Any) -> Optional[str]:
+    async def run(self, agent: Agent, response: Any) -> HookResult | None:
         message = response.choices[0].message
+
+        if agent.pending_continuation:
+            continuation = agent.pending_continuation
+            agent.pending_continuation = None
+            try:
+                result = continuation(message)
+                if inspect.isawaitable(result):
+                    result = await result
+                output, agent.pending_continuation = _unpack(result)
+            except Exception as e:
+                output = f"Error executing continuation: {e}"
+            return HookResult(output, consumed=True)
         
         if not hasattr(message, "tool_calls") or not message.tool_calls:
             return None
-            
+
+        continuations = []
         for call in message.tool_calls:
             agent.session.refresh_files()
             tool_name = call.function.name
@@ -41,12 +62,26 @@ class ToolCallHook(Hook):
                         args["agentconfig"] = getattr(agent, "config", None)
                         
                     result = tool_wrapper(**args)
-                    tool_msg["content"] = str(result)
+                    if inspect.isawaitable(result):
+                        result = await result
+                    tool_msg["content"], continuation = _unpack(result)
+                    if continuation:
+                        continuations.append((tool_msg, continuation))
                 except Exception as e:
                     tool_msg["content"] = f"Error executing tool {tool_name}: {e}"
             else:
                 tool_msg["content"] = f"Error: Tool {tool_name} not found."
                 
             agent.rollout.raw_chat.append(tool_msg)
-            
-        return None
+
+        if len(continuations) == 1:
+            agent.pending_continuation = continuations[0][1]
+        elif len(continuations) > 1:
+            error = (
+                "Error: Multiple continuation tools were called in one response. "
+                "No continuation was bound; call one at a time."
+            )
+            for tool_msg, _ in continuations:
+                tool_msg["content"] = error
+
+        return HookResult(consumed=True)

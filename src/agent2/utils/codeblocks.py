@@ -1,3 +1,6 @@
+from enum import Enum
+
+
 class Extraction_Mode(Enum):
     """Enum for specifying code block extraction mode."""
     FIRST = "first"     # Extract first code block
@@ -30,7 +33,7 @@ def extract_codeblock(text: str, mode: Extraction_Mode = Extraction_Mode.FIRST):
         if index1n == -1:
             return None
         index2 = text.find("```", index1n + 1)
-        return text[index1n:index2].strip() if index2 != -1 else text[index1n:].strip()
+        return text[index1n + 1:index2].strip("\n") if index2 != -1 else text[index1n + 1:].strip("\n")
     
     elif mode == Extraction_Mode.LAST:
         # Extract the last code block
@@ -44,7 +47,7 @@ def extract_codeblock(text: str, mode: Extraction_Mode = Extraction_Mode.FIRST):
         index1n = text.find("\n", index1)
         if index1n == -1:
             return None
-        return text[index1n:index2].strip()
+        return text[index1n + 1:index2].strip("\n")
     
     elif mode == Extraction_Mode.SPAN_MAX:
         # Assume there's only one code block; extract it by finding the first ``` and the last ```
@@ -56,8 +59,8 @@ def extract_codeblock(text: str, mode: Extraction_Mode = Extraction_Mode.FIRST):
             return None
         index2 = text.rfind("```")
         if index2 == -1 or index1 == index2:
-            return text[index1n:].strip()
-        return text[index1n:index2].strip()
+            return text[index1n + 1:].strip("\n")
+        return text[index1n + 1:index2].strip("\n")
 
 def extract_all_codeblocks(text: str) -> list:
     """
@@ -89,7 +92,7 @@ def extract_all_codeblocks(text: str) -> list:
             break
         
         # Extract the code block and add it to the list
-        codeblock = text[newline_idx:close_idx].strip()
+        codeblock = text[newline_idx + 1:close_idx].strip("\n")
         codeblocks.append(codeblock)
         
         # Move the start index to after the closing ```

@@ -6,12 +6,15 @@ from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
 from openai import AsyncOpenAI
 
-from agent2.core.objects import AgentConfig, Rollout, Message, Constructor, Hook
+from agent2.core.objects import AgentConfig, Rollout, Message, Constructor, Hook, PendingContinuation
 from agent2.core.tools.tool import Tool
 
 if TYPE_CHECKING:
     from agent2.core.session import Session
     from agent2.core.workspace import Workspace
+
+_STOP = object()
+
 
 class Agent:
     """
@@ -50,15 +53,22 @@ class Agent:
         self.constructors = constructors
         self.hooks = hooks
         self.tools = tools
+        self.pending_continuation: PendingContinuation | None = None
 
         self.session.register_rollout(self.rollout)
         
         for constructor in self.constructors:
             constructor.setup(self, prompt)
 
-    async def receive_message(self, message: Any) -> None:
+    async def receive_message(self, message: str) -> None:
         """Puts a message into the agent's inbox."""
+        if not isinstance(message, str):
+            raise TypeError("Agent messages must be strings")
         await self.inbox.put(message)
+
+    async def stop(self) -> None:
+        """Stop the agent through its private control channel."""
+        await self.inbox.put(_STOP)
 
     def followup(self, prompt: str) -> None:
         """
@@ -67,8 +77,12 @@ class Agent:
         for constructor in self.constructors:
             constructor.followup(self, prompt)
 
-    async def send_message(self, target_id: str, content: Any) -> None:
+    async def send_message(self, target_id: str, content: str) -> None:
         """Emits a message to the pipeline for routing."""
+        if target_id == self.rollout.id:
+            raise ValueError("Agents cannot message themselves")
+        if not isinstance(content, str):
+            raise TypeError("Agent messages must be strings")
         await self.outbox.put(Message(target_id=target_id, content=content))
 
     async def save_rollout(self) -> None:
@@ -98,18 +112,23 @@ class Agent:
             raise ValueError("max_steps must be at least 1")
 
         for _ in range(max_steps):
-            # 1. Process any pending messages in the inbox
+            inbox = []
             while not self.inbox.empty():
                 msg = self.inbox.get_nowait()
-                if msg == "STOP":
+                self.inbox.task_done()
+                if msg is _STOP:
                     await self.save_rollout()
                     return None
-                if isinstance(msg, Message):
-                    msg = msg.content
-                if isinstance(msg, dict):
-                    self.rollout.raw_chat.append(msg)
+                inbox.append(msg)
+            if self.pending_continuation:
+                for msg in inbox:
+                    self.inbox.put_nowait(msg)
+            elif inbox:
+                content = "\n\n".join(inbox)
+                if self.rollout.raw_chat and self.rollout.raw_chat[-1].get("role") == "user":
+                    self.rollout.raw_chat[-1]["content"] += f"\n\n{content}"
                 else:
-                    self.rollout.raw_chat.append({"role": "user", "content": str(msg)})
+                    self.rollout.raw_chat.append({"role": "user", "content": content})
                 
             # 2. Run the LLM step (do not interrupt as it wastes tokens)
             response = await self._run_llm_step()
@@ -119,12 +138,15 @@ class Agent:
             
             # Run hooks and collect stacked returns
             stacked_outputs = []
+            consumed = False
             for hook in self.hooks:
-                output = hook.run(self, response)
-                if inspect.isawaitable(output):
-                    output = await output
-                if output:
-                    stacked_outputs.append(output)
+                result = hook.run(self, response)
+                if inspect.isawaitable(result):
+                    result = await result
+                if result:
+                    consumed |= result.consumed
+                    if result.output:
+                        stacked_outputs.append(result.output)
                     
             if stacked_outputs:
                 stacked_str = "\n".join(stacked_outputs)
@@ -140,8 +162,11 @@ class Agent:
             
             await self.save_rollout()
 
+            if consumed:
+                continue
             message = response.choices[0].message
-            if not getattr(message, "tool_calls", None):
-                return getattr(message, "content", None)
+            if getattr(message, "tool_calls", None):
+                raise RuntimeError("Assistant tool calls were not consumed by a hook")
+            return getattr(message, "content", None)
 
         raise RuntimeError(f"Agent {self.rollout.id!r} exceeded {max_steps} LLM steps")

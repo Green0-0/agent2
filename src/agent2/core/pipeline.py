@@ -67,6 +67,8 @@ class SingleAgentPipeline(Pipeline):
                 )
                 if outbox_task in done:
                     message = outbox_task.result()
+                    if message.target_id == agent.rollout.id:
+                        raise ValueError("Agents cannot message themselves")
                     target = self.active_agents.get(message.target_id)
                     if target is None:
                         agent_task.cancel()

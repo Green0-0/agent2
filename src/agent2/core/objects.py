@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Callable, Optional, TYPE_CHECKING
 from abc import ABC, abstractmethod
 from pydantic import BaseModel, Field
 from dataclasses import dataclass
@@ -44,7 +44,17 @@ class AgentConfig(BaseModel):
 class Message:
     """Represents a message sent between agents or from the pipeline."""
     target_id: str
-    content: Any
+    content: str
+
+
+PendingContinuation = Callable[[Any], Any]
+
+
+@dataclass(slots=True)
+class HookResult:
+    """Output from a hook and whether it handled the assistant response."""
+    output: str | None = None
+    consumed: bool = False
 
 
 class Constructor(ABC):
@@ -74,9 +84,9 @@ class Constructor(ABC):
 
 class Hook(ABC):
     """Classes which wrap functions that run in the agent loop right after the LLM response is parsed.
-    Each optionally returns a string which is appended to the tool response or user message."""
+    Hook output is appended to the tool response or user message."""
     @abstractmethod
-    def run(self, agent: Agent, response: Any) -> Optional[str]:
+    def run(self, agent: Agent, response: Any) -> HookResult | None:
         """
         Execute the hook logic.
         
@@ -85,7 +95,7 @@ class Hook(ABC):
             response (Any): The parsed LLM response triggering the hook.
             
         Returns:
-            Optional[str]: An optional string to append to the tool response or user message.
+            HookResult | None: Optional output and response-consumption state.
         """
         pass
 
