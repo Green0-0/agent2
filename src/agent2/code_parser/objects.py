@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 @dataclass(frozen=True)
-class CodeEdit:
-    """Payload representing a targeted text mutation.
+class FileEdit:
+    """Payload representing a targeted file mutation.
     
     Attributes:
         start_byte: The starting byte of the edit.

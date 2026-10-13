@@ -1,5 +1,5 @@
 from typing import Literal
-from agent2.code_parser.objects import CodeEdit
+from agent2.code_parser.objects import FileEdit
 from agent2.code_parser.file import CodeFile
 from agent2.code_parser.objects import CodeNode
 from typing import List, Tuple
@@ -27,7 +27,7 @@ def commit_mutations(code_file: CodeFile, updates: List[Tuple[str, str]]) -> Non
             code_file.current_state
         )
         
-        edit_payload = CodeEdit(
+        edit_payload = FileEdit(
             start_byte=sym.body_block.start_byte,
             end_byte=sym.body_block.end_byte,
             start_point=sym.body_block.start_point,
@@ -35,4 +35,4 @@ def commit_mutations(code_file: CodeFile, updates: List[Tuple[str, str]]) -> Non
             new_text=normalized_text.encode('utf-8')
         )
         
-        code_file.apply_edit_and_reparse(edit_payload)
+        code_file.apply_edit(edit_payload)

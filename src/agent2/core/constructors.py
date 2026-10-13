@@ -1,139 +1,78 @@
 import platform
 from datetime import datetime
-from agent2.core.objects import Constructor
+
 from agent2.core.agent import Agent
+from agent2.core.objects import Constructor
+
 
 class DefaultConstructor(Constructor):
-    """
-    Initializes the agent's chat history.
-    Sets up the system prompt and adds the first user message.
-    """
-    def setup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        agent.rollout.raw_chat.append({
-            "role": "system",
-            "content": agent.config.system_prompt
-        })
-        agent.rollout.raw_chat.append({
-            "role": "user",
-            "content": prompt
-        })
+    """Initialize the agent's chat history."""
 
-    def followup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        agent.rollout.raw_chat.append({
-            "role": "user",
-            "content": prompt
-        })
+    def setup(self, agent: Agent, prompt: str) -> None:
+        agent.rollout.raw_chat.extend([
+            {"role": "system", "content": agent.config.system_prompt},
+            {"role": "user", "content": prompt},
+        ])
+
+    def followup(self, agent: Agent, prompt: str) -> None:
+        agent.rollout.raw_chat.append({"role": "user", "content": prompt})
 
 
-class DateConstructor(Constructor):
-    """Provides the current date to the agent chat."""
+class _ProviderConstructor(Constructor):
+    def __init__(self, key: str, format_lite: str, format_full: str):
+        self.key = key
+        self.format_lite = format_lite
+        self.format_full = format_full
+
+    def value(self, agent: Agent) -> str:
+        raise NotImplementedError
+
+    def _apply(self, agent: Agent, messages: list[dict]) -> None:
+        value = self.value(agent)
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = content.replace(
+                    f"{{{{{self.key}}}}}", self.format_lite.format(value)
+                ).replace(
+                    f"{{{{{self.key}*}}}}", self.format_full.format(value)
+                )
+
+    def setup(self, agent: Agent, prompt: str) -> None:
+        self._apply(agent, agent.rollout.raw_chat)
+
+    def followup(self, agent: Agent, prompt: str) -> None:
+        messages = agent.rollout.raw_chat
+        if messages and messages[-1].get("role") == "user":
+            self._apply(agent, messages[-1:])
+
+
+class DateConstructor(_ProviderConstructor):
+    """Provide the current date to the agent chat."""
+
     def __init__(self, key: str, format_lite: str = "{}", format_full: str = "The current date is {}."):
-        self.key = key
-        self.format_lite = format_lite
-        self.format_full = format_full
+        super().__init__(key, format_lite, format_full)
 
-    def setup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        value = datetime.now().isoformat()
-        
-        if full:
-            formatted_value = self.format_full.format(value)
-            target_token = f"{{{{{self.key}*}}}}"
-        else:
-            formatted_value = self.format_lite.format(value)
-            target_token = f"{{{{{self.key}}}}}"
-            
-        for msg in agent.rollout.raw_chat:
-            if isinstance(msg.get("content"), str):
-                msg["content"] = msg["content"].replace(target_token, formatted_value)
-
-    def followup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        value = datetime.now().isoformat()
-        
-        if full:
-            formatted_value = self.format_full.format(value)
-            target_token = f"{{{{{self.key}*}}}}"
-        else:
-            formatted_value = self.format_lite.format(value)
-            target_token = f"{{{{{self.key}}}}}"
-            
-        if agent.rollout.raw_chat and agent.rollout.raw_chat[-1].get("role") == "user":
-            msg = agent.rollout.raw_chat[-1]
-            if isinstance(msg.get("content"), str):
-                msg["content"] = msg["content"].replace(target_token, formatted_value)
+    def value(self, agent: Agent) -> str:
+        return datetime.now().isoformat()
 
 
-class DirectoryConstructor(Constructor):
-    """Provides the working directory structure to the agent chat."""
+class DirectoryConstructor(_ProviderConstructor):
+    """Provide the working directory structure to the agent chat."""
+
     def __init__(self, key: str, format_lite: str = "{}", format_full: str = "The directory structure is:\n{}", dir_format: str = "full"):
-        self.key = key
-        self.format_lite = format_lite
-        self.format_full = format_full
+        super().__init__(key, format_lite, format_full)
         self.dir_format = dir_format
 
-    def setup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        files = sorted(agent.workspace.paths())
-        value = "\n".join(files)
-        
-        if full:
-            formatted_value = self.format_full.format(value)
-            target_token = f"{{{{{self.key}*}}}}"
-        else:
-            formatted_value = self.format_lite.format(value)
-            target_token = f"{{{{{self.key}}}}}"
-        
-        for msg in agent.rollout.raw_chat:
-            if isinstance(msg.get("content"), str):
-                msg["content"] = msg["content"].replace(target_token, formatted_value)
-
-    def followup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        files = sorted(agent.workspace.paths())
-        value = "\n".join(files)
-        
-        if full:
-            formatted_value = self.format_full.format(value)
-            target_token = f"{{{{{self.key}*}}}}"
-        else:
-            formatted_value = self.format_lite.format(value)
-            target_token = f"{{{{{self.key}}}}}"
-        
-        if agent.rollout.raw_chat and agent.rollout.raw_chat[-1].get("role") == "user":
-            msg = agent.rollout.raw_chat[-1]
-            if isinstance(msg.get("content"), str):
-                msg["content"] = msg["content"].replace(target_token, formatted_value)
+    def value(self, agent: Agent) -> str:
+        return "\n".join(sorted(agent.workspace.paths()))
 
 
-class OSInfoConstructor(Constructor):
-    """Provides operating system information to the agent chat."""
+class OSInfoConstructor(_ProviderConstructor):
+    """Provide operating-system information to the agent chat."""
+
     def __init__(self, key: str, format_lite: str = "{}", format_full: str = "The operating system is {}."):
-        self.key = key
-        self.format_lite = format_lite
-        self.format_full = format_full
+        super().__init__(key, format_lite, format_full)
 
-    def setup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        value = f"{platform.system()} {platform.release()}"
-        
-        if full:
-            formatted_value = self.format_full.format(value)
-            target_token = f"{{{{{self.key}*}}}}"
-        else:
-            formatted_value = self.format_lite.format(value)
-            target_token = f"{{{{{self.key}}}}}"
-        
-        for msg in agent.rollout.raw_chat:
-            if isinstance(msg.get("content"), str):
-                msg["content"] = msg["content"].replace(target_token, formatted_value)
-
-    def followup(self, agent: Agent, prompt: str, full: bool = False) -> None:
-        value = f"{platform.system()} {platform.release()}"
-        
-        if full:
-            formatted_value = self.format_full.format(value)
-            target_token = f"{{{{{self.key}*}}}}"
-        else:
-            formatted_value = self.format_lite.format(value)
-            target_token = f"{{{{{self.key}}}}}"
-        
-        if agent.rollout.raw_chat and agent.rollout.raw_chat[-1].get("role") == "user":
-            msg = agent.rollout.raw_chat[-1]
-            if isinstance(msg.get("content"), str):
-                msg["content"] = msg["content"].replace(target_token, formatted_value)
+    def value(self, agent: Agent) -> str:
+        return f"{platform.system()} {platform.release()}"

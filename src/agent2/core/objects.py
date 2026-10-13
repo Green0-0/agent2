@@ -50,26 +50,24 @@ class Message:
 class Constructor(ABC):
     """Classes which wrap functions that run before the agent loop begins, to setup the agent."""
     @abstractmethod
-    def setup(self, agent: Agent, prompt: str, full: bool = False) -> None:
+    def setup(self, agent: Agent, prompt: str) -> None:
         """
         Execute setup logic before the agent loop.
         
         Args:
             agent (Agent): The agent instance to be set up.
             prompt (str): The initial user input or task description.
-            full (bool): Whether to substitute the full sentence version (asterisk) of the token.
         """
         pass
 
     @abstractmethod
-    def followup(self, agent: Agent, prompt: str, full: bool = False) -> None:
+    def followup(self, agent: Agent, prompt: str) -> None:
         """
         Execute followup logic on the latest user message.
         
         Args:
             agent (Agent): The agent instance whose chat is to be modified.
             prompt (str): The new user message content.
-            full (bool): Whether to substitute the full sentence version (asterisk) of the token.
         """
         pass
 

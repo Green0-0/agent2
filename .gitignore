@@ -118,6 +118,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
@@ -156,3 +158,4 @@ cython_debug/
 *.swo
 
 .archive_outdated/
+/smoke_repos/

@@ -176,10 +176,11 @@ class Tool:
             if param_name.lower().replace("_", "") in skip_names:
                 continue
 
-            if hasattr(param.annotation, "__name__"):
-                param_type_str = param.annotation.__name__
-            else:
-                param_type_str = "str"
+            param_type_str = (
+                param.annotation
+                if isinstance(param.annotation, str)
+                else getattr(param.annotation, "__name__", "str")
+            )
 
             json_type = type_map.get(param_type_str.lower(), "string")
 

@@ -15,13 +15,18 @@ class FakeCodeActToolCallExtractor(ToolCallExtractor):
     def extract(self, response_str: str) -> Tuple[str, List[Dict], List[ToolError]]:
         """
         Extracts tool calls from the response string.
+
+        Parse only the first tool block. Text after the block begins is omitted
+        on success. If no block is found or extraction fails, preserve the
+        original response; failures return no calls and report extraction errors.
         
         Args:
             response_str (str): The raw response from the model.
             
         Returns:
             Tuple[str, List[Dict], List[ToolError]]: 
-                - The response text with tool calls removed (or just the text part).
+                - The stripped assistant text before the first tool block,
+                  or the original response when no block is found or parsing fails.
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """

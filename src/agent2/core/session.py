@@ -1,13 +1,11 @@
 from __future__ import annotations
 import json
 import tomllib
-from bisect import bisect_right
 from pathlib import Path
 from collections import OrderedDict
 
 from agent2.core.objects import AgentConfig, Rollout
 from agent2.code_parser.file import CodeFile, File
-from agent2.code_parser.objects import CodeEdit, CodeState
 from agent2.code_parser.languages.adapters import (
     get_adapter_for_extension,
     get_all_ignored_directories,
@@ -76,31 +74,18 @@ class Session:
                 continue
             adapter = get_adapter_for_extension(file_path.suffix)
             current = self.files.get(path)
-            if isinstance(current, CodeFile) and current.adapter is adapter and current.tree:
-                old = current.current_state.bytes
-                start = next((i for i, pair in enumerate(zip(old, data)) if pair[0] != pair[1]), min(len(old), len(data)))
-                old_end, new_end = len(old), len(data)
-                while old_end > start and new_end > start and old[old_end - 1] == data[new_end - 1]:
-                    old_end -= 1
-                    new_end -= 1
-                starts = current.current_state._line_starts
-                start_row = bisect_right(starts, start) - 1
-                end_row = bisect_right(starts, old_end) - 1
+            compatible = (
+                isinstance(current, CodeFile) and current.adapter is adapter
+                or isinstance(current, File) and not isinstance(current, CodeFile) and adapter is None
+            )
+            if compatible:
                 try:
-                    current.apply_edit_and_reparse(CodeEdit(
-                        start, old_end,
-                        (start_row, start - starts[start_row]),
-                        (end_row, old_end - starts[end_row]),
-                        data[start:new_end],
-                    ))
+                    current.replace_bytes(data)
                     current.original_state = current.current_state
                     continue
                 except Exception:
                     pass
-            if current and not adapter:
-                current.original_state = current.current_state = CodeState(data)
-            else:
-                self.files[path] = CodeFile(path, adapter, data) if adapter else File(path, data)
+            self.files[path] = CodeFile(path, adapter, data) if adapter else File(path, data)
         for path in self.files.keys() - found:
             del self.files[path]
 

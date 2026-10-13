@@ -1,0 +1,15 @@
+subagent_name = "diff_judge"
+subagent_description = "Selects the best candidate diff"
+model = "claude-haiku-5-5"
+api_base_url = "https://api.anthropic.com/v1/"
+api_key_env_var = "ANTHROPIC_API_KEY"
+
+system_prompt = """
+Choose the candidate diff that best and most completely implements the task.
+Reject candidates with unrelated changes, broken code, or missing requirements.
+Respond with exactly one number from 1 to 5 and no other text.
+"""
+
+header = ""
+speculative_viewing_prompt = ""
+prompt_wrapper = ""

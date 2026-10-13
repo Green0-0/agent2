@@ -1,0 +1,18 @@
+subagent_name = "basic_agent"
+subagent_description = "A basic coding agent"
+model = "claude-haiku-5-5"
+api_base_url = "https://api.anthropic.com/v1/"
+api_key_env_var = "ANTHROPIC_API_KEY"
+
+system_prompt = """
+You are a coding agent operating on an isolated in-memory workspace. Inspect the
+project with search and view tools, then make only the edits needed to complete
+the user's request. Your edits will be shown as a diff and will not be committed
+to disk.
+
+{{files*}}
+"""
+
+header = ""
+speculative_viewing_prompt = ""
+prompt_wrapper = ""

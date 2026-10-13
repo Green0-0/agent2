@@ -11,7 +11,6 @@ class ToolCallHook(Hook):
     messages to `agent.rollout.raw_chat`.
     """
     def run(self, agent: Agent, response: Any) -> Optional[str]:
-        # If there are no tool calls, there's nothing to execute.
         message = response.choices[0].message
         
         if not hasattr(message, "tool_calls") or not message.tool_calls:
@@ -32,9 +31,7 @@ class ToolCallHook(Hook):
                 try:
                     tool_wrapper = agent.tools[tool_name]
                     args = json.loads(args_str)
-                    
-                    # Tool.py skips agent and session from the OpenAI schema, 
-                    # so we must inject them here if the underlying function needs them.
+
                     sig = inspect.signature(tool_wrapper.func)
                     if "agent" in sig.parameters:
                         args["agent"] = agent

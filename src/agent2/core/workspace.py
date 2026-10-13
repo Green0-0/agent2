@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from difflib import unified_diff
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from agent2.code_parser.file import CodeFile, File
 from agent2.code_parser.languages.adapters import get_adapter_for_extension
-from agent2.code_parser.objects import CodeEdit, CodeState
+from agent2.code_parser.objects import FileEdit
 
 if TYPE_CHECKING:
     from agent2.core.session import Session
@@ -39,27 +40,26 @@ class Workspace:
         source = self.session.files.get(path)
         if source is None:
             return None
-        self.files[path] = self._file(path, source.current_state.bytes)
-        self.files[path].original_state = source.current_state
-        return self.files[path]
+        file = source.clone()
+        file.original_state = source.current_state
+        self.files[path] = file
+        return file
 
     def write_file(self, path: str, data: bytes) -> File:
         previous = self.files.get(path)
-        current = self._checkout(path)
-        original = (previous or current).original_state if previous or current else None
-        self.files[path] = self._file(path, data)
-        self.files[path].original_state = original
-        return self.files[path]
-
-    def apply_edit(self, path: str, edit: CodeEdit) -> File | None:
         file = self._checkout(path)
-        if file is None:
-            return None
-        if isinstance(file, CodeFile):
-            file.apply_edit_and_reparse(edit)
-        else:
-            data = file.current_state.bytes
-            file.current_state = CodeState(data[:edit.start_byte] + edit.new_text + data[edit.end_byte:])
+        if file:
+            file.replace_bytes(data)
+            return file
+        file = self._file(path, data)
+        file.original_state = previous.original_state if previous else None
+        self.files[path] = file
+        return file
+
+    def apply_edit(self, path: str, edit: FileEdit) -> File | None:
+        file = self._checkout(path)
+        if file:
+            file.apply_edit(edit)
         return file
 
     def delete_file(self, path: str) -> bool:
@@ -71,11 +71,26 @@ class Workspace:
 
     def clone(self) -> Workspace:
         workspace = Workspace(self.session)
-        for path, file in self.files.items():
-            copy = self._file(path, file.current_state.bytes) if file.current_state else File(path)
-            copy.original_state = file.original_state
-            workspace.files[path] = copy
+        workspace.files = {path: file.clone() for path, file in self.files.items()}
         return workspace
+
+    def diff(self) -> list[tuple[str, str]]:
+        diffs = []
+        for path, file in sorted(self.files.items()):
+            before = file.original_state.bytes if file.original_state else None
+            after = file.current_state.bytes if file.current_state else None
+            if before == after:
+                continue
+            content = "\n".join(unified_diff(
+                (before or b"").decode("utf-8", errors="replace").splitlines(),
+                (after or b"").decode("utf-8", errors="replace").splitlines(),
+                fromfile=f"a/{path}" if before is not None else "/dev/null",
+                tofile=f"b/{path}" if after is not None else "/dev/null",
+                lineterm="",
+            ))
+            if content:
+                diffs.append((path, content))
+        return diffs
 
     def commit(self) -> None:
         self.session.refresh_files()

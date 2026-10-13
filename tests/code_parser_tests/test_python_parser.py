@@ -2,8 +2,8 @@ import os
 import pytest
 from pathlib import Path
 
-from agent2.code_parser.file import CodeFile
-from agent2.code_parser.objects import CodeEdit
+from agent2.code_parser.file import CodeFile, File
+from agent2.code_parser.objects import FileEdit
 from agent2.code_parser.languages.python import PythonLanguageAdapter
 from agent2.code_parser.interface.renderer import view_code_node_automatic, view_code_node_full
 
@@ -162,14 +162,23 @@ def test_data_processing_pipeline_extraction(python_adapter):
     assert "Pipeline.add.122" in nodes
     assert "Pipeline.add.conditional_stage.140" in nodes
 
-def test_apply_edit_and_reparse(python_adapter):
+def test_file_apply_edit():
+    file = File("notes.txt", b"before middle after")
+    old_state = file.apply_edit(FileEdit(7, 13, (0, 7), (0, 13), b"changed"))
+
+    assert old_state.bytes == b"before middle after"
+    assert file.original_state is old_state
+    assert file.current_state.bytes == b"before changed after"
+
+
+def test_code_file_apply_edit_reparses(python_adapter):
     source = b"def test():\n    pass\n"
     code_file = CodeFile("edit_test.py", python_adapter, source)
     
     node = code_file.code_nodes["test.1"]
     
     # Replace "pass" with "return True"
-    edit = CodeEdit(
+    edit = FileEdit(
         start_byte=node.body_block.start_byte,
         end_byte=node.body_block.end_byte,
         start_point=node.body_block.start_point,
@@ -177,7 +186,7 @@ def test_apply_edit_and_reparse(python_adapter):
         new_text=b"    return True\n"
     )
     
-    code_file.apply_edit_and_reparse(edit)
+    code_file.apply_edit(edit)
     
     assert b"return True" in code_file.current_state.bytes
     assert "test.1" in code_file.code_nodes

@@ -1,5 +1,8 @@
+from __future__ import annotations
+
+from bisect import bisect_right
 from typing import Optional, Dict, Any
-from agent2.code_parser.objects import CodeState, CodeEdit, CodeNode
+from agent2.code_parser.objects import CodeState, FileEdit, CodeNode
 from agent2.code_parser.utils import calculate_new_endpoint
 from agent2.code_parser.languages.abc import LanguageAdapter
 
@@ -19,6 +22,44 @@ class File:
         if initial_bytes is not None:
             self.original_state = CodeState(initial_bytes)
             self.current_state = self.original_state
+
+    def apply_edit(self, edit: FileEdit) -> CodeState:
+        """Apply a byte-range edit and return the previous state."""
+        if not self.current_state:
+            raise RuntimeError("Cannot edit a file without content.")
+        old_state = self.current_state
+        data = old_state.bytes
+        self.current_state = CodeState(data[:edit.start_byte] + edit.new_text + data[edit.end_byte:])
+        return old_state
+
+    def replace_bytes(self, data: bytes) -> CodeState:
+        """Replace content through the smallest single byte-range edit."""
+        if not self.current_state:
+            raise RuntimeError("Cannot replace a file without content.")
+        old = self.current_state.bytes
+        if old == data:
+            return self.current_state
+        start = next((i for i, pair in enumerate(zip(old, data)) if pair[0] != pair[1]), min(len(old), len(data)))
+        old_end, new_end = len(old), len(data)
+        while old_end > start and new_end > start and old[old_end - 1] == data[new_end - 1]:
+            old_end -= 1
+            new_end -= 1
+        starts = self.current_state._line_starts
+        start_row = bisect_right(starts, start) - 1
+        end_row = bisect_right(starts, old_end) - 1
+        return self.apply_edit(FileEdit(
+            start,
+            old_end,
+            (start_row, start - starts[start_row]),
+            (end_row, old_end - starts[end_row]),
+            data[start:new_end],
+        ))
+
+    def clone(self) -> File:
+        clone = File(self.path)
+        clone.original_state = self.original_state
+        clone.current_state = self.current_state
+        return clone
 
 
 class CodeFile(File):
@@ -54,7 +95,7 @@ class CodeFile(File):
         old_state = self.current_state
         self.tree = self.adapter.parse(new_bytes, old_tree)
         self.current_state = CodeState(new_bytes)
-        if sync_original or self.original_state is None:
+        if sync_original:
             self.original_state = self.current_state
         self.code_nodes = {}
         for s in self.adapter.extract_nodes(self.tree.root_node, self.current_state):
@@ -65,16 +106,8 @@ class CodeFile(File):
                 object.__setattr__(parent, 'children', parent.children + (s,))
         return old_state
 
-    def apply_edit_and_reparse(self, edit: CodeEdit) -> CodeState:
-        """
-        Applies an edit to the file and reparses it.
-
-        Args:
-            edit: The edit to apply.
-
-        Returns:
-            The previous CodeState.
-        """
+    def apply_edit(self, edit: FileEdit) -> CodeState:
+        """Apply a byte-range edit, incrementally reparse, and return the previous state."""
         if not self.current_state or not self.tree:
             raise RuntimeError("Cannot apply edits to an unparsed CodeFile. Call parse_to_bytes first.")
 
@@ -93,3 +126,11 @@ class CodeFile(File):
         
         new_bytes = old_bytes[:edit.start_byte] + edit.new_text + old_bytes[edit.end_byte:]
         return self.parse_to_bytes(new_bytes, old_tree=self.tree, sync_original=False)
+
+    def clone(self) -> CodeFile:
+        clone = CodeFile(self.path, self.adapter)
+        clone.original_state = self.original_state
+        clone.current_state = self.current_state
+        clone.tree = self.tree.copy() if self.tree is not None else None
+        clone.code_nodes = self.code_nodes.copy()
+        return clone

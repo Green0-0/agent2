@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from agent2.core.objects import Rollout
-from agent2.core.pipeline import SingleAgentPipeline
+from agent2.core.pipeline import BasicMultiAgentPipeline, SingleAgentPipeline
 from agent2.core.session import Session
 from agent2.core.tools.editing import replace_file, replace_lines
 from agent2.core.tools.tool import Tool
@@ -46,6 +46,37 @@ class FakeClient:
     async def create(self, **kwargs):
         self.requests.append(deepcopy(kwargs))
         return SimpleNamespace(choices=[SimpleNamespace(message=next(self.messages))])
+
+
+class MultiFakeClient:
+    def __init__(self, fail_at=None):
+        self.candidates = 0
+        self.fail_at = fail_at
+        self.requests = []
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self.create))
+
+    async def create(self, **kwargs):
+        self.requests.append(deepcopy(kwargs))
+        if kwargs["messages"][-1]["role"] == "tool":
+            message = FakeMessage(content="done")
+        elif "tools" not in kwargs:
+            message = FakeMessage(content="3")
+        else:
+            self.candidates += 1
+            if self.candidates == self.fail_at:
+                raise RuntimeError("candidate failed")
+            call = SimpleNamespace(
+                id=f"call-{self.candidates}",
+                function=SimpleNamespace(
+                    name="replace_file",
+                    arguments=json.dumps({
+                        "file_path": "main.py",
+                        "new_content": f"candidate {self.candidates}\n",
+                    }),
+                ),
+            )
+            message = FakeMessage(tool_calls=[call])
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
 
 def test_session_uses_config_paths_and_round_trips_rollouts(tmp_path):
@@ -144,6 +175,19 @@ def test_workspace_commits_creations_and_deletions(tmp_path):
     assert workspace.files == {}
 
 
+def test_workspace_diff_returns_one_path_and_diff_tuple_per_file(tmp_path):
+    (tmp_path / "a.txt").write_text("old\n", encoding="utf-8")
+    workspace = Workspace(Session(tmp_path))
+    workspace.write_file("a.txt", b"new\n")
+    workspace.write_file("b.txt", b"created\n")
+
+    diffs = workspace.diff()
+
+    assert [path for path, _ in diffs] == ["a.txt", "b.txt"]
+    assert diffs[0][1].startswith("--- a/a.txt\n+++ b/a.txt")
+    assert diffs[1][1].startswith("--- /dev/null\n+++ b/b.txt")
+
+
 def test_workspace_can_recreate_a_deleted_file(tmp_path):
     path = tmp_path / "file.txt"
     path.write_text("old", encoding="utf-8")
@@ -165,6 +209,44 @@ def test_structural_edits_checkout_privately(tmp_path):
 
     assert b"return 1" in session.files["main.py"].current_state.bytes
     assert b"return 2" in workspace.read_file("main.py").current_state.bytes
+
+
+def test_workspace_reuses_parse_trees_for_checkout_writes_and_clones(tmp_path, monkeypatch):
+    path = tmp_path / "main.py"
+    path.write_text("def value():\n    return 1\n", encoding="utf-8")
+    session = Session(tmp_path)
+    source = session.files["main.py"]
+    parse = source.adapter.parse
+    old_trees = []
+
+    def track_parse(data, old_tree=None):
+        old_trees.append(old_tree)
+        return parse(data, old_tree)
+
+    monkeypatch.setattr(source.adapter, "parse", track_parse)
+    workspace = Workspace(session)
+    agent = SimpleNamespace(workspace=workspace)
+
+    replace_file(session, agent, "main.py", "def value():\n    return 2\n")
+    checked_out = workspace.files["main.py"]
+    assert len(old_trees) == 1 and old_trees[0] is not None
+    assert checked_out.tree is not source.tree
+    assert b"return 1" in source.current_state.bytes
+
+    old_trees.clear()
+    isolated = workspace.clone()
+    assert old_trees == []
+    assert isolated.files["main.py"].tree is not checked_out.tree
+    replace_file(session, SimpleNamespace(workspace=isolated), "main.py", "def value():\n    return 3\n")
+    assert len(old_trees) == 1 and old_trees[0] is not None
+    assert b"return 2" in checked_out.current_state.bytes
+
+    old_trees.clear()
+    workspace.write_file("new.py", b"def created():\n    pass\n")
+    assert old_trees == [None]
+    workspace.write_file("new.py", b"def created():\n    return 1\n")
+    assert old_trees[1] is not None
+    assert workspace.files["new.py"].original_state is None
 
 
 def test_single_agent_pipeline_runs_tools_until_final_response(tmp_path):
@@ -202,3 +284,42 @@ def test_single_agent_pipeline_runs_tools_until_final_response(tmp_path):
     persisted = json.loads((tmp_path / ".agent2" / "task" / "run-1.json").read_text())
     assert persisted["id"] == "run-1"
     assert persisted["raw_chat"][-1]["content"] == "The answer is 8."
+
+
+def test_multi_agent_pipeline_selects_an_isolated_diff_without_committing(tmp_path):
+    path = tmp_path / "main.py"
+    path.write_text("original\n", encoding="utf-8")
+    client = MultiFakeClient()
+    pipeline = BasicMultiAgentPipeline(
+        "config/agents/sample.toml",
+        "Improve main.py",
+        rollout_id="multi",
+        tools={"replace_file": Tool(replace_file)},
+        client=client,
+    )
+
+    choice = asyncio.run(pipeline.run(Session(tmp_path)))
+
+    assert choice == 3
+    assert len(pipeline.diffs) == 5
+    assert all(f"+candidate {number}" in diff for number, diff in enumerate(pipeline.diffs, 1))
+    assert path.read_text(encoding="utf-8") == "original\n"
+    assert len(list((tmp_path / ".agent2" / "task").glob("multi-*.json"))) == 6
+    assert "CANDIDATE 5" in client.requests[-1]["messages"][-1]["content"]
+
+
+def test_multi_agent_pipeline_keeps_other_candidates_after_one_fails(tmp_path):
+    (tmp_path / "main.py").write_text("original\n", encoding="utf-8")
+    client = MultiFakeClient(fail_at=5)
+    pipeline = BasicMultiAgentPipeline(
+        "config/agents/sample.toml",
+        "Improve main.py",
+        rollout_id="partial",
+        tools={"replace_file": Tool(replace_file)},
+        client=client,
+    )
+
+    assert asyncio.run(pipeline.run(Session(tmp_path))) == 3
+    assert pipeline.errors == [None, None, None, None, "candidate failed"]
+    assert len(pipeline.diffs) == 5
+    assert "STATUS: failed: candidate failed" in client.requests[-1]["messages"][-1]["content"]

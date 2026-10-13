@@ -14,13 +14,19 @@ class XMLToolCallExtractor(ToolCallExtractor):
     def extract(self, response_str: str) -> Tuple[str, List[Dict], List[ToolError]]:
         """
         Extracts tool calls from the response string.
+
+        Parse the first run of tool blocks separated only by whitespace.
+        Text after the first block begins is omitted on success. If no blocks
+        are found or extraction fails, preserve the original response; failures
+        return no calls and report extraction errors.
         
         Args:
             response_str (str): The raw response from the model.
             
         Returns:
             Tuple[str, List[Dict], List[ToolError]]: 
-                - The response text with tool calls removed (or just the text part).
+                - The stripped assistant text before the first tool block,
+                  or the original response when no blocks are found or parsing fails.
                 - A list of extracted tool call dictionaries.
                 - A list of errors encountered during extraction.
         """

@@ -13,17 +13,23 @@ class DuplicateArgumentError(Exception):
     pass
 
 class ToolCallExtractor(ABC):
-    """The ToolCallExtractor parses the message and tool call from the response string, along with errors, if applicable."""
+    """Parse assistant text, structured tool calls, and errors from a model response."""
     
     @abstractmethod
     def extract(self, response_str: str) -> Tuple[str, List[Dict], List[ToolError]]:
-        """Extracts a tool call string from a tool call list.
-        In the event of an extraction error, the tool will be left blank and the message string will contain the partially complete tool.
+        """Extract structured tool calls and assistant text from a response string.
+
+        On successful block parsing, assistant text is the stripped prefix before
+        the first tool block; text after that point is omitted. If no tool block
+        is found, return the original response with empty call and error lists.
+        On an extraction error, return the original response, an empty call list,
+        and the errors.
 
         Args:
-            response_str (str): The response string to extract the tool call from.
+            response_str (str): The raw model response to parse.
             
         Returns:
-            Tuple[str, List[Dict], List[ToolError]]: A tuple containing the tool call string, a list of tool call dictionaries, and a list of tool errors.
+            Tuple[str, List[Dict], List[ToolError]]: Assistant content text,
+                extracted tool call dictionaries, and extraction errors.
         """
         pass

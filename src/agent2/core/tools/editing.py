@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
 from agent2.core.session import Session
-from agent2.code_parser.objects import CodeEdit
+from agent2.code_parser.objects import FileEdit
 
 if TYPE_CHECKING:
     from agent2.core.agent import Agent
@@ -91,7 +91,7 @@ def replace_element(session: Session, agent: Agent, file_path: str, element_path
     if not hasattr(file, 'code_nodes'): return f"Error: {file_path} is not a parsed code file."
     node = file.code_nodes.get(element_path)
     if not node: return f"Error: Element {element_path} not found in {file_path}."
-    edit = CodeEdit(
+    edit = FileEdit(
         start_byte=node.full_block.start_byte,
         end_byte=node.full_block.end_byte,
         start_point=node.full_block.start_point,
@@ -127,7 +127,7 @@ def replace_element_at(session: Session, agent: Agent, file_path: str, line: int
             if length < best_len:
                 best_len, best_node = length, node
     if not best_node: return f"Error: No element found at line {line}."
-    edit = CodeEdit(
+    edit = FileEdit(
         start_byte=best_node.full_block.start_byte,
         end_byte=best_node.full_block.end_byte,
         start_point=best_node.full_block.start_point,
@@ -155,7 +155,7 @@ def replace_lines(session: Session, agent: Agent, file_path: str, line_start: in
     start_byte = file.current_state.get_line_byte_range(line_start)[0]
     end_byte = file.current_state.get_line_byte_range(line_end)[1]
     idx = min(line_end - 1, len(file.current_state._line_starts) - 1)
-    edit = CodeEdit(
+    edit = FileEdit(
         start_byte=start_byte,
         end_byte=end_byte,
         start_point=(line_start - 1, 0),
