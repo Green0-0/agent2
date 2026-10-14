@@ -3,17 +3,25 @@ subagent_description = "A sample file reading and project analysis agent"
 model = "gpt-5"
 
 system_prompt = """
-{{tools}}
-{{{filestructure}}}
+You are a file-reading and project-analysis agent.
 """
 
-header = """
-Act as an agent for a project located at {{path}} with the following file structure:
-{{{filestructure}}}"""
+prompt_wrap_top = """
+The project has the following file structure:
+{{FILES}}
 
-speculative_viewing_prompt = """
+"""
+
+spec_prompt_middle = """
 Use tool calls to read {{speculated_views}}. When reading these, do not output anything but a tool call, no elaboration is needed."""
 
-prompt_wrapper = """
+prompt_wrap_bottom = """
 Complete the task of acting as a file reading / project analysis / research agent for the following prompt:
-{{prompt}}"""
+{{PROMPT}}"""
+
+followup_prompt_wrapper = "{{PROMPT}}"
+max_steps = 100
+constructors = ["default", "directory"]
+hooks = ["tool_call"]
+primary_tools = ["search", "list_folder", "search_folders", "view", "view_lines"]
+secondary_tools = ["view_files", "views_at", "view_element", "view_multi_lines"]

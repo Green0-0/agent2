@@ -4,12 +4,14 @@ import inspect
 import os
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
+from uuid import uuid4
 from openai import AsyncOpenAI
 
-from agent2.core.objects import AgentConfig, Rollout, Message, Constructor, Hook, PendingContinuation
-from agent2.core.tools.tool import Tool
+from agent2.core.globals import CONSTRUCTORS, HOOKS, TOOLS
+from agent2.core.objects import AgentConfig, Rollout, Message, PendingContinuation
 
 if TYPE_CHECKING:
+    from agent2.core.objects import Pipeline
     from agent2.core.session import Session
     from agent2.core.workspace import Workspace
 
@@ -21,28 +23,26 @@ class Agent:
     Represents an active agent in the system.
     Each agent holds its own configuration, task, and a Rollout to track history.
     """
-    def __init__(self, session: Session, workspace: Workspace, config: AgentConfig, unique_id: str, prompt: str, constructors: list[Constructor], hooks: list[Hook], tools: dict[str, Tool], parent_id: Optional[str] = None, client: Any = None) -> None:
+    def __init__(self, session: Session, workspace: Workspace, config: AgentConfig, prompt: str, unique_id: str | None = None, parent_id: Optional[str] = None, client: Any = None) -> None:
         """
         Initializes an Agent with a configuration and a unique rollout context.
         
         Args:
             session (Session): The session this agent belongs to.
             config (AgentConfig): The configuration defining the agent's behavior.
-            unique_id (str): A unique identifier for the agent's task execution.
             prompt (str): The initial user input or task description.
-            constructors (list[Constructor]): The constructors to setup the agent.
-            hooks (list[Hook]): The hooks to run after LLM execution.
-            tools (dict[str, Tool]): A dictionary of instantiated Tools available to the agent.
+            unique_id (str): Optional rollout ID. Generated when omitted.
             parent_id (Optional[str], optional): The ID of the parent agent, if any. Defaults to None.
         """
         self.session = session
         self.workspace = workspace
+        self.pipeline: Pipeline | None = None
         self.config = config
         self.inbox: asyncio.Queue = asyncio.Queue()
         self.outbox: asyncio.Queue = asyncio.Queue()
         self.rollout: Rollout = Rollout(
             config_path=config.path,
-            id=unique_id,
+            id=unique_id or uuid4().hex,
             date_deployed=datetime.now().isoformat(),
             parent=parent_id
         )
@@ -50,9 +50,14 @@ class Agent:
         api_key = os.environ.get(self.config.api_key_env_var) if self.config.api_key_env_var else None
         self.client = client or AsyncOpenAI(api_key=api_key, base_url=self.config.api_base_url)
         
-        self.constructors = constructors
-        self.hooks = hooks
-        self.tools = tools
+        try:
+            self.constructors = [CONSTRUCTORS[name]() for name in config.constructors]
+            self.hooks = [HOOKS[name]() for name in config.hooks]
+            self.primary_tools = {name: TOOLS[name] for name in config.primary_tools}
+            self.secondary_tools = {name: TOOLS[name] for name in config.secondary_tools}
+        except KeyError as exc:
+            raise ValueError(f"Unknown configured agent component: {exc.args[0]}") from exc
+        self.tools = self.primary_tools.copy()
         self.pending_continuation: PendingContinuation | None = None
 
         self.session.register_rollout(self.rollout)
@@ -103,15 +108,12 @@ class Agent:
         response = await self.client.chat.completions.create(**kwargs)
         return response
 
-    async def run(self, max_steps: int = 100) -> Any:
+    async def run(self) -> Any:
         """
         The main loop for the agent.
         It processes incoming messages, then performs an LLM step.
         """
-        if max_steps < 1:
-            raise ValueError("max_steps must be at least 1")
-
-        for _ in range(max_steps):
+        for _ in range(self.config.max_steps):
             inbox = []
             while not self.inbox.empty():
                 msg = self.inbox.get_nowait()
@@ -169,4 +171,4 @@ class Agent:
                 raise RuntimeError("Assistant tool calls were not consumed by a hook")
             return getattr(message, "content", None)
 
-        raise RuntimeError(f"Agent {self.rollout.id!r} exceeded {max_steps} LLM steps")
+        raise RuntimeError(f"Agent {self.rollout.id!r} exceeded {self.config.max_steps} LLM steps")

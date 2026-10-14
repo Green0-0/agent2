@@ -171,13 +171,23 @@ def _open_range(agent: Agent, file_path: str, start_byte: int, end_byte: int, st
     file = agent.workspace.read_file(file_path)
     if not file or not file.current_state:
         return f"Error: File {file_path} not found."
+    if start_point[1]:
+        start_byte -= start_point[1]
+        start_point = (start_point[0], 0)
     original = file.current_state.bytes
-    content = original[start_byte:end_byte].decode("utf-8")
+    selected = original[start_byte:end_byte]
+    content = selected.decode("utf-8")
 
     def finish(message):
         if not agent.rollout.raw_chat or agent.rollout.raw_chat[-1].get("role") != "assistant":
             raise RuntimeError("Continuation response is missing from chat history")
         agent.rollout.raw_chat.pop()
+        if getattr(message, "tool_calls", None):
+            agent.rollout.raw_chat.append({
+                "role": "user",
+                "content": "The editing window is still open. Respond with exactly one replacement code block or cancel without calling tools.",
+            })
+            return "", finish
         text = getattr(message, "content", None) or ""
         blocks = extract_all_codeblocks(text)
         if not blocks:
@@ -190,21 +200,27 @@ def _open_range(agent: Agent, file_path: str, start_byte: int, end_byte: int, st
             if not current or not current.current_state or current.current_state.bytes != original:
                 result = f"No edits made: {file_path} changed after it was opened."
             else:
+                replacement = blocks[0].encode("utf-8")
+                if selected.endswith(b"\n") and replacement and not replacement.endswith(b"\n"):
+                    replacement += b"\n"
                 agent.workspace.apply_edit(file_path, FileEdit(
                     start_byte,
                     end_byte,
                     start_point,
                     end_point,
-                    blocks[0].encode("utf-8"),
+                    replacement,
                 ))
                 diff = dict(agent.workspace.diff()).get(file_path)
                 result = f"Edited {file_path}." + (f"\n\n{diff}" if diff else " No content changed.")
         agent.rollout.raw_chat.append({"role": "user", "content": result})
 
     return (
-        f"```\n{content}\n```\n"
-        "The next code block you send will replace this content. "
-        "Send no code block to cancel.",
+        f"```\n{content}{'' if content.endswith(chr(10)) else chr(10)}```\n"
+        "If you wish to edit the above code, output a Markdown-formatted code block beginning with ``` "
+        "and ending with ``` in your next response. This will be automatically detected and replace the "
+        "above content. Do not make any tool calls; the response will be automatically parsed.\n"
+        "If you do not wish to edit the above code, output a cancellation reason in raw text. Again, do not "
+        "make any tool calls, as the cancellation reason will be automatically recorded.",
         finish,
     )
 

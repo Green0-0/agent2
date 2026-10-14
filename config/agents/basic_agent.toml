@@ -10,9 +10,18 @@ project with search and view tools, then make only the edits needed to complete
 the user's request. Your edits will be shown as a diff and will not be committed
 to disk.
 
-{{files*}}
+{{FILES*}}
 """
 
-header = ""
-speculative_viewing_prompt = ""
-prompt_wrapper = ""
+prompt_wrap_bottom = "{{PROMPT}}"
+followup_prompt_wrapper = "{{PROMPT}}"
+max_steps = 30
+constructors = ["default", "directory"]
+hooks = ["tool_call"]
+primary_tools = [
+    "search", "list_folder", "search_folders", "view", "view_lines",
+    "open_file", "open_lines", "open_element", "open_element_at",
+    "replace_file", "replace_lines", "replace_element", "replace_element_at",
+    "make_empty_files",
+]
+secondary_tools = ["view_files", "views_at", "view_element", "view_multi_lines", "move_files"]

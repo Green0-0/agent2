@@ -100,40 +100,48 @@ The project declares Tree-sitter packages for additional languages, but those la
 
 **TOML File Configuration:**
 
-An `AgentConfig` contains its injected config path, subagent name and description, system prompt, header, speculative viewing prompt, prompt wrapper, model, optional API base URL, and optional API-key environment variable.
+An `AgentConfig` contains its injected config path; subagent name and description; model, optional API base URL, and optional API-key environment variable; system prompt; optional top prompt wrapper; optional speculative middle prompt; required bottom and followup prompt wrappers; maximum step count; and lists of constructor, hook, primary-tool, and secondary-tool names. TOML arrays map directly to those component lists.
 
-The current default constructor uses the system prompt and the supplied task directly. The header, speculative viewing prompt, and prompt wrapper remain available to custom constructors but are not merged by the default path.
+`globals.py` is the component registry. `TOOLS` maps tool names to `Tool` wrappers, while `CONSTRUCTORS` and `HOOKS` map configured names to zero-argument factories. Built-in provider constructors use the tokens `{{DATE}}`, `{{FILES}}`, and `{{OS}}`, with `*` variants selecting their full descriptive format.
 
 **Agent:**
 
-Each `Agent` owns one rollout, one workspace reference, one config, an LLM client, constructors, hooks, tools, and asynchronous inbox/outbox queues. The rollout ID is the agent's execution identity. Parent and child IDs describe rollout relationships; they do not imply workspace sharing or commit ancestry.
+Each `Agent` owns one rollout, one workspace reference, one config, an LLM client, resolved constructors, hooks, primary tools, secondary tools, one optional pending continuation, and asynchronous inbox/outbox queues. Primary tools are immediately exposed to the model. Secondary tools are resolved but remain inactive until the secondary-tool activation mechanism is implemented.
+
+The agent generates its rollout ID when no explicit ID is supplied by a future runtime such as delegation. Parent IDs likewise belong to agent creation by a delegating runtime, not normal pipeline configuration. Parent and child IDs describe rollout relationships; they do not imply workspace sharing or commit ancestry.
+
+Inbox and inter-agent message content is string-only. Inbox strings are joined and inserted as one user message, or appended to the final user message when one already exists. Chat dictionaries remain internal to `raw_chat`; callers cannot inject system, assistant, or tool roles through the inbox. Ordinary inbox messages wait while a continuation owns the next model response. `stop()` uses a private control sentinel, so the literal text `STOP` remains ordinary user content.
 
 **Constructors:**
 
 Constructors modify chat state during initial setup and followups.
 
-The default constructor inserts the configured system prompt followed by the user prompt. Optional constructors can substitute the current date, operating-system information, or the workspace path listing into configured tokens. Each provider replaces both the lightweight `{{key}}` and full-sentence `{{key*}}` forms in the same pass.
+The default constructor accepts its prompt-token key, which is `PROMPT` in the global registry. It inserts the configured system prompt, then builds the initial user message from `prompt_wrap_top + prompt_wrap_bottom` and replaces that token. Followups replace the same token in `followup_prompt_wrapper` instead of repeating the initial wrapper. `spec_prompt_middle` is stored but currently ignored because speculative viewing is unsupported.
+
+Optional constructors can substitute the current date, operating-system information, or workspace path listing into configured tokens. Each provider replaces both the lightweight `{{KEY}}` and full-sentence `{{KEY*}}` forms in the same pass.
 
 **Hooks:**
 
-Hooks run after each LLM response. Their optional string results are stacked and appended to the latest tool/user message or inserted as a new user message.
+Hooks run after each LLM response and return an optional `HookResult`. Its `output` is stacked with other hook output and appended to the latest tool/user message or inserted as a new user message. Its `consumed` flag means the response was handled and the agent loop must continue rather than treating it as a final answer. Consumption controls the loop and does not imply chat-history deletion.
 
-The default `ToolCallHook` refreshes session files, parses tool arguments, injects runtime-only arguments such as `agent`, `session`, and `agentconfig`, executes the selected tool, and appends an OpenAI-format tool response. Tool exceptions become tool response text rather than escaping the agent loop.
+The default `ToolCallHook` routes a response to the agent's pending continuation before ordinary tool-call processing. Otherwise it refreshes session files, parses tool arguments, injects runtime-only arguments such as `agent`, `session`, and `agentconfig`, executes the selected tool, and appends an OpenAI-format tool response. Tool and continuation exceptions become hook or tool response text rather than escaping the agent loop.
 
 **Tools:**
 
 `Tool` wraps a Python function and builds an OpenAI function schema from its signature and docstring. Runtime-only parameters are omitted from the public schema. Required parameters are inferred from missing defaults, and examples are parsed from `Task:` / `Tool Call:` docstring blocks.
 
+A tool normally returns response content. It may instead return `(content, continuation)`, where the continuation is a callable which receives the next assistant message. The callable can access its originating agent through its closure, may manage chat history itself, and may return another `(content, continuation)` pair to form a chain. Only one continuation may be bound per agent; if one assistant response creates several, all are rejected and none are bound.
+
 ## Agent Loop
 
-The agent loop has a configurable maximum number of steps, defaulting to 100.
+The agent loop takes its maximum number of steps from `AgentConfig.max_steps`.
 
-1. Drain the inbox into `raw_chat`. A `STOP` message saves and ends the rollout.
+1. Honor the private stop sentinel. If no continuation is pending, join queued inbox strings into one user message; otherwise defer them.
 2. Send the current chat, model, and tool schemas to an OpenAI-compatible chat-completions client.
 3. Append the assistant message to `raw_chat`.
-4. Run each hook and append any stacked hook output.
+4. Run each hook, collect its `HookResult`, and append any stacked hook output.
 5. Save the rollout.
-6. Return the assistant content when no tool call remains; otherwise continue.
+6. Continue when a hook consumed the response. Otherwise return normal assistant content; an unconsumed tool call is an error.
 
 Exceeding the step limit raises an error.
 
@@ -141,25 +149,25 @@ Exceeding the step limit raises an error.
 
 **Pipeline:**
 
-`Pipeline` is an abstract runtime with a map of active agents. Concrete pipelines decide how agents are created, connected, assigned workspaces, and finalized.
+`Pipeline` is an abstract runtime with a pipeline-local map of active agents. Its shared utilities register agents, watch their run and outbox tasks, transfer messages, persist completed rollouts, and unregister agents during cleanup. A registered agent records its owning pipeline and cannot simultaneously join another one. A transfer succeeds only when both sender and target are active in the same pipeline instance; messages cannot cross pipeline boundaries.
 
 **SingleAgentPipeline:**
 
-The implemented pipeline creates one agent from a config path and prompt. It accepts an explicit rollout ID, parent ID, constructors, hooks, tools, workspace, client, and step limit. If no workspace is supplied, it creates a fresh overlay on the session.
+The implemented pipeline accepts only a config path and prompt. It creates a fresh workspace over the supplied session, then creates an agent which resolves its model client, step limit, constructors, hooks, and tools from its config. The agent generates the rollout ID. `run` returns a `PipelineResult` containing the final answer, rollout ID, and workspace, without retaining duplicate mutable output fields on the pipeline.
 
-The pipeline runs the agent and an outbox listener concurrently, routes messages to active agents, saves the rollout during cleanup, and removes the agent from the active map. A missing target is an error.
+The pipeline registers its agent and delegates execution to the base watcher. A missing target, inactive sender, cross-pipeline target, or attempt to message oneself is an error.
 
 **BasicMultiAgentPipeline:**
 
-This pipeline concurrently runs five agents from the same prompt in cloned, isolated workspaces. Candidate failures are retained without stopping the other runs. A sixth agent receives the task, all five diffs, and their completion statuses, then returns exactly one candidate number. That validated number is the pipeline result; the candidate workspaces and diffs remain available to the caller. The pipeline never commits a workspace.
+This pipeline creates five agents with separate session-derived workspaces, registers all five in its own active-agent map, and watches them concurrently. They therefore share a messaging boundary without sharing filesystem edits. Candidate failures are retained without stopping the other runs. After the candidates finish, a sixth agent, configured separately as the diff judge, receives the task, all five diffs, and their completion statuses, then returns exactly one candidate number. That validated number is the pipeline result; the candidate workspaces and diffs remain available to the caller. The pipeline never commits a workspace.
 
 Workspace behavior is compositional: future pipelines can pass one workspace to several agents, clone workspaces for isolation, or combine both patterns in different branches.
 
 **Messaging Limitation:**
 
-The current inbox/outbox implementation is scaffolding rather than functional multi-agent messaging. `SingleAgentPipeline` listens only to its single agent's outbox, and its active-agent registry contains only that agent. Messages to any other rollout fail, independently created pipelines cannot see each other's live agents, and the declared messaging tools are not implemented. A message arriving during an agent's final LLM step may also remain unread because the inbox is only drained before each step.
+The base pipeline can now transfer direct messages within its own active-agent registry, and the basic multi-agent candidates share that registry. The declared messaging tools remain unimplemented, so model-generated messages cannot use this route yet. Broadcast behavior and sender labeling are also not implemented. A message arriving during an agent's final LLM step may remain unread because the inbox is only drained before each step.
 
-Broadcast messaging requires a shared runtime message bus used by every pipeline in the same composed run. The bus must own the live-agent registry, support direct and broadcast envelopes with sender identity, deliver only to active inboxes, and register/unregister agents atomically with completion. Tool execution must await asynchronous messaging tools, and agents must check delivered messages after an LLM response before returning. `Session.datastore` cannot serve this role because it contains persisted rollouts rather than live agents. The basic multi-agent pipeline does not use messaging; it composes independent candidate runs and a final judging run.
+Future message tools should call the owning pipeline's transfer utilities rather than `Session.datastore`, which contains persisted rollouts rather than live agents. Broadcasts must snapshot only that pipeline's active agents and exclude the sender. No global bus should connect independent pipelines.
 
 ## Code Tools
 
@@ -175,7 +183,9 @@ Implemented edits include moving files in the overlay, creating empty files, rep
 
 Moves are represented as a workspace deletion plus creation. Directory creation is implicit when committed; the current `make_dir` arguments do not change in-memory behavior.
 
-The interactive `open_file`, `open_lines`, `open_element`, and `open_element_at` tools are declared but not implemented.
+The interactive `open_file`, `open_lines`, `open_element`, and `open_element_at` tools return the selected content and bind a continuation for the next assistant response. Their shared range editor accepts exactly one replacement code block, treats a response without one as cancellation, rejects multiple blocks, and applies a byte-coordinate `FileEdit` to parsed or ordinary files. The continuation owns its transcript cleanup: it removes the temporary assistant replacement message and inserts the edit result and per-file diff as user content.
+
+An open tool captures the complete file bytes when opened. Before applying its range edit it refreshes disk files and requires the effective workspace file to still match that snapshot. A concurrent change therefore cancels the edit instead of applying stale byte offsets.
 
 **Searching:**
 
@@ -183,7 +193,7 @@ The interactive `open_file`, `open_lines`, `open_element`, and `open_element_at`
 
 Matches in parsed files are assigned directly to the innermost `CodeNode`, avoiding duplicate parent matches. Top-level matches and matches in generic files are grouped under `<file>`. Element paths are searchable alongside content. Docstrings are included without repeating their matching source lines.
 
-Results retain the ten elements with the most matches and are trimmed to forty output lines. `multisearch`, folder listing, and folder-search variants are declared but not implemented.
+Results are ranked deterministically by match count and discovery order. `start_index` selects the first ranked result of a ten-item page and defaults to zero; displayed results include their one-based ranks. Each page is trimmed to forty output lines without removing ranked items. `list_folder` lists the immediate effective workspace entries at a project-relative path. `search_folders` performs case-insensitive regex matching over file paths and folder paths inferred from them, returning at most the first hundred sorted matches.
 
 **Agent Utilities:**
 
@@ -210,11 +220,11 @@ Custom endpoints expose conversion, extraction, schema/call/response building, v
 The current implementation does not yet include:
 
 - Merging or graph pipelines.
-- A shared live-agent message bus and implemented delegation, broadcast, and agent-management tools.
-- Interactive editor windows.
+- Implemented delegation, direct-message, broadcast, and agent-management tools on top of the pipeline-local router.
 - Non-Python language adapters.
 - Repomap, embeddings, BM25, reranking, or prefix-cache retrieval.
 - Automatic workspace commits, rebasing, or merging.
+- Persistence or recovery of an in-flight continuation across process restarts.
 - Persistent tool-proxy history.
 
 These are extension points rather than hidden session behavior. The current runtime is centered on a live shared session, sparse copy-on-write workspaces, explicit pipeline composition, optimistic commits, Tree-sitter-backed code files, and persisted rollout histories.

@@ -1,21 +1,35 @@
+from __future__ import annotations
+
 import platform
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from agent2.core.agent import Agent
 from agent2.core.objects import Constructor
+
+if TYPE_CHECKING:
+    from agent2.core.agent import Agent
 
 
 class DefaultConstructor(Constructor):
     """Initialize the agent's chat history."""
 
+    def __init__(self, key: str = "PROMPT"):
+        self.key = key
+
     def setup(self, agent: Agent, prompt: str) -> None:
+        content = ((agent.config.prompt_wrap_top or "") + agent.config.prompt_wrap_bottom).replace(
+            f"{{{{{self.key}}}}}", prompt
+        )
         agent.rollout.raw_chat.extend([
             {"role": "system", "content": agent.config.system_prompt},
-            {"role": "user", "content": prompt},
+            {"role": "user", "content": content},
         ])
 
     def followup(self, agent: Agent, prompt: str) -> None:
-        agent.rollout.raw_chat.append({"role": "user", "content": prompt})
+        agent.rollout.raw_chat.append({
+            "role": "user",
+            "content": agent.config.followup_prompt_wrapper.replace(f"{{{{{self.key}}}}}", prompt),
+        })
 
 
 class _ProviderConstructor(Constructor):

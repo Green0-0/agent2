@@ -10,17 +10,13 @@ from agent2.core.session import Session
 if TYPE_CHECKING:
     from agent2.core.agent import Agent
 
-
-def multisearch(session: Session, agent: Agent, regexes: str):
-    ...
-
-
 def search(
     session: Session,
     agent: Agent,
     regex: str,
     path_regex: str | None = None,
     extensions: str | None = None,
+    start_index: int = 0,
 ) -> str:
     """Search workspace contents with a case-insensitive regular expression.
 
@@ -31,11 +27,14 @@ def search(
         regex: Regular expression to match against file contents and element paths.
         path_regex: Optional regular expression used to select workspace paths.
         extensions: Optional comma-separated file extensions to include.
+        start_index: Zero-based index of the first ranked result to show.
 
     Examples:
         Task: Find authentication code in Python files under src or tests.
-        Tool Call: {"regex": "auth|login|session", "path_regex": "^(src|tests)/", "extensions": "py"}
+        Tool Call: {"regex": "auth|login|session", "path_regex": "^(src|tests)/", "extensions": "py", "start_index": 0}
     """
+    if start_index < 0:
+        raise ValueError("start_index must be zero or greater")
     try:
         pattern = re.compile(regex, re.IGNORECASE)
         path_pattern = re.compile(path_regex, re.IGNORECASE) if path_regex else None
@@ -122,12 +121,16 @@ def search(
     if not results:
         return "No matches found."
 
-    kept = {
-        result["order"]
-        for result in sorted(results, key=lambda result: (-result["count"], result["order"]))[:10]
-    }
-    results = [result for result in results if result["order"] in kept]
-    line_count = 1 + len({result["path"] for result in results}) + sum(
+    total = len(results)
+    results = sorted(results, key=lambda result: (-result["count"], result["order"]))[
+        start_index:start_index + 10
+    ]
+    if not results:
+        return f"No search results at or after index {start_index}."
+    line_count = 1 + sum(
+        index == 0 or result["path"] != results[index - 1]["path"]
+        for index, result in enumerate(results)
+    ) + sum(
         2 + len(result["doc"]) + len(result["matches"]) for result in results
     )
     while line_count > 40:
@@ -140,14 +143,16 @@ def search(
             break
         line_count -= 1
 
-    output = [f"# Showing first {len(results)} elements with a match"]
+    output = [
+        f"# Showing ranked results {start_index + 1}-{start_index + len(results)} of {total}"
+    ]
     current_path = None
-    for result in results:
+    for rank, result in enumerate(results, start_index + 1):
         if result["path"] != current_path:
             current_path = result["path"]
             output.append(f"## File {current_path}:")
         output.append(
-            f"### Element `{result['name']}`, lines {result['start']}-{result['end']} "
+            f"### {rank}. Element `{result['name']}`, lines {result['start']}-{result['end']} "
             f"({result['count']} matches)"
         )
         output.extend(result["doc"])
@@ -156,13 +161,59 @@ def search(
     return "\n".join(output).strip()
 
 
-def list_folder(session: Session, agent: Agent, folder_path: str):
-    ...
+def list_folder(session: Session, agent: Agent, folder_path: str) -> str:
+    """List the immediate files and folders at a project-relative path.
+
+    Folders end with ``/``. Use ``.`` or an empty string for the project root.
+
+    Args:
+        folder_path: Project-relative folder path to list.
+
+    Examples:
+        Task: List the contents of the source folder.
+        Tool Call: {"folder_path": "src"}
+    """
+    folder = folder_path.strip().strip("/")
+    if folder == ".":
+        folder = ""
+    if ".." in folder.split("/"):
+        return f"Error: Folder path must stay within the project: {folder_path}"
+    prefix = f"{folder}/" if folder else ""
+    entries = {
+        name + ("/" if separator else "")
+        for path in agent.workspace.paths()
+        if path.startswith(prefix) and (remainder := path[len(prefix):])
+        for name, separator, _ in [remainder.partition("/")]
+    }
+    if not entries:
+        return f"Error: Folder {folder_path or '.'} not found or empty."
+    return f"# Folder {folder or '.'}\n" + "\n".join(sorted(entries))
 
 
-def search_folders_multi(session: Session, agent: Agent, regexes: str):
-    ...
+def search_folders(session: Session, agent: Agent, regex: str) -> str:
+    """Search project-relative folder and file paths with a case-insensitive regex.
 
+    Matching folders end with ``/``. At most the first 100 sorted matches are shown.
 
-def search_folders(session: Session, agent: Agent, regex: str):
-    ...
+    Args:
+        regex: Regular expression to match against complete project-relative paths.
+
+    Examples:
+        Task: Find test folders and Python test files.
+        Tool Call: {"regex": "(^|/)tests?(/|$)|test_.*[.]py$"}
+    """
+    try:
+        pattern = re.compile(regex, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError(f"Invalid regex pattern: {exc}") from exc
+
+    paths = set(agent.workspace.paths())
+    entries = set(paths)
+    for path in paths:
+        parts = path.split("/")
+        entries.update("/".join(parts[:end]) + "/" for end in range(1, len(parts)))
+    matches = sorted(path for path in entries if pattern.search(path.rstrip("/")))
+    if not matches:
+        return "No matching paths found."
+    shown = matches[:100]
+    return f"# Showing {len(shown)} of {len(matches)} matching paths\n" + "\n".join(shown)

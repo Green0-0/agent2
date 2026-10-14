@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 import json
 import inspect
-from typing import Any
+from typing import Any, TYPE_CHECKING
 from agent2.core.objects import Hook, HookResult, PendingContinuation
-from agent2.core.agent import Agent
+
+if TYPE_CHECKING:
+    from agent2.core.agent import Agent
 
 
 def _unpack(result: Any) -> tuple[str | None, PendingContinuation | None]:
