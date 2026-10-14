@@ -22,6 +22,8 @@ primary_tools = [
     "search", "list_folder", "search_folders", "view", "view_lines",
     "open_file", "open_lines", "open_element", "open_element_at",
     "replace_file", "replace_lines", "replace_element", "replace_element_at",
-    "make_empty_files",
+    "make_empty_files", "delegate", "message_subagent", "cancel_subagent",
 ]
 secondary_tools = ["view_files", "views_at", "view_element", "view_multi_lines", "move_files"]
+workspace_policy = "clone"
+subagent_names = ["sample_agent"]

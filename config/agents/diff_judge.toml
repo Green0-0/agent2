@@ -17,3 +17,5 @@ constructors = ["default"]
 hooks = []
 primary_tools = []
 secondary_tools = []
+workspace_policy = "isolated"
+subagent_names = []

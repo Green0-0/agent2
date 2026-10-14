@@ -100,7 +100,9 @@ The project declares Tree-sitter packages for additional languages, but those la
 
 **TOML File Configuration:**
 
-An `AgentConfig` contains its injected config path; subagent name and description; model, optional API base URL, and optional API-key environment variable; system prompt; optional top prompt wrapper; optional speculative middle prompt; required bottom and followup prompt wrappers; maximum step count; and lists of constructor, hook, primary-tool, and secondary-tool names. TOML arrays map directly to those component lists.
+An `AgentConfig` contains its injected config path; subagent name and description; model, optional API base URL, and optional API-key environment variable; system prompt; optional top prompt wrapper; optional speculative middle prompt; required bottom and followup prompt wrappers; maximum step count; lists of constructor, hook, primary-tool, and secondary-tool names; a workspace policy; and the configured subagent names it may delegate to. TOML arrays map directly to the component and subagent lists.
+
+The delegated agent's `workspace_policy` controls its relationship to its parent. `isolated` creates a fresh workspace over the session, `clone` copies the parent's current overlay and then diverges, and `shared` uses the same workspace object. Since the policy belongs to the child config, one parent may create shared, cloned, and isolated branches by delegating to different configured agents.
 
 `globals.py` is the component registry. `TOOLS` maps tool names to `Tool` wrappers, while `CONSTRUCTORS` and `HOOKS` map configured names to zero-argument factories. Built-in provider constructors use the tokens `{{DATE}}`, `{{FILES}}`, and `{{OS}}`, with `*` variants selecting their full descriptive format.
 
@@ -108,7 +110,7 @@ An `AgentConfig` contains its injected config path; subagent name and descriptio
 
 Each `Agent` owns one rollout, one workspace reference, one config, an LLM client, resolved constructors, hooks, primary tools, secondary tools, one optional pending continuation, and asynchronous inbox/outbox queues. Primary tools are immediately exposed to the model. Secondary tools are resolved but remain inactive until the secondary-tool activation mechanism is implemented.
 
-The agent generates its rollout ID when no explicit ID is supplied by a future runtime such as delegation. Parent IDs likewise belong to agent creation by a delegating runtime, not normal pipeline configuration. Parent and child IDs describe rollout relationships; they do not imply workspace sharing or commit ancestry.
+The agent generates its rollout ID when no explicit ID is supplied. Parent IDs belong to agent creation by the delegation runtime, not normal pipeline configuration. Parent and child IDs describe rollout relationships; they do not imply workspace sharing or commit ancestry.
 
 Inbox and inter-agent message content is string-only. Inbox strings are joined and inserted as one user message, or appended to the final user message when one already exists. Chat dictionaries remain internal to `raw_chat`; callers cannot inject system, assistant, or tool roles through the inbox. Ordinary inbox messages wait while a continuation owns the next model response. `stop()` uses a private control sentinel, so the literal text `STOP` remains ordinary user content.
 
@@ -149,13 +151,17 @@ Exceeding the step limit raises an error.
 
 **Pipeline:**
 
-`Pipeline` is an abstract runtime with a pipeline-local map of active agents. Its shared utilities register agents, watch their run and outbox tasks, transfer messages, persist completed rollouts, and unregister agents during cleanup. A registered agent records its owning pipeline and cannot simultaneously join another one. A transfer succeeds only when both sender and target are active in the same pipeline instance; messages cannot cross pipeline boundaries.
+`Pipeline` is an abstract runtime with pipeline-local maps of active agents and their lifecycle tasks. Its shared utilities register and start agents, spawn configured children, transfer messages, cancel branches, persist completed rollouts, and unregister agents during cleanup. A registered agent keeps a reference to the pipeline so delegation tools can use that runtime.
+
+Message routing is a local target lookup. A target absent from that pipeline is ignored, so independent pipelines are naturally isolated without ownership checks or a global message bus. Delivered messages are plain user-content strings labeled with the sender's configured name and rollout ID.
 
 **SingleAgentPipeline:**
 
 The implemented pipeline accepts only a config path and prompt. It creates a fresh workspace over the supplied session, then creates an agent which resolves its model client, step limit, constructors, hooks, and tools from its config. The agent generates the rollout ID. `run` returns a `PipelineResult` containing the final answer, rollout ID, and workspace, without retaining duplicate mutable output fields on the pipeline.
 
-The pipeline registers its agent and delegates execution to the base watcher. A missing target, inactive sender, cross-pipeline target, or attempt to message oneself is an error.
+The pipeline starts its root through the base lifecycle watcher. A final response completes an agent only when it has no active direct children and no already-queued message. Otherwise the agent becomes idle. An inbox message starts the same agent again with its existing rollout and chat history. A child remains active while any of its own children remain active, so this direct-child rule applies recursively without a separate wait tool.
+
+When a child truly completes, its final answer or failure is delivered to its parent through the inbox after the child leaves the active registry. The parent therefore receives a natural followup turn. The root pipeline result is produced only after the root has no active descendants. Cancelling a child also cancels its descendants.
 
 **BasicMultiAgentPipeline:**
 
@@ -163,11 +169,11 @@ This pipeline creates five agents with separate session-derived workspaces, regi
 
 Workspace behavior is compositional: future pipelines can pass one workspace to several agents, clone workspaces for isolation, or combine both patterns in different branches.
 
-**Messaging Limitation:**
+**Delegation and Messaging:**
 
-The base pipeline can now transfer direct messages within its own active-agent registry, and the basic multi-agent candidates share that registry. The declared messaging tools remain unimplemented, so model-generated messages cannot use this route yet. Broadcast behavior and sender labeling are also not implemented. A message arriving during an agent's final LLM step may remain unread because the inbox is only drained before each step.
+`delegate` accepts an allowed configured subagent name and instructions, creates the child according to that config's workspace policy, records the rollout relationship, starts its lifecycle task, and returns its rollout ID. The child's initial task includes its parent rollout ID so it can send messages upward. The parent's per-agent tool schema enumerates the allowed names and their descriptions. Config lookup requires exactly one matching `subagent_name`.
 
-Future message tools should call the owning pipeline's transfer utilities rather than `Session.datastore`, which contains persisted rollouts rather than live agents. Broadcasts must snapshot only that pipeline's active agents and exclude the sender. No global bus should connect independent pipelines.
+`message_subagent` queues a string for a rollout ID. The owning pipeline routes and labels it; an unrelated or completed ID is simply absent from the local registry and receives nothing. `cancel_subagent` is restricted to a direct active child and recursively cancels that branch. Completion notifications use the same inbox wakeup behavior as ordinary messages. Broadcast and persistence of live agent tasks across process restarts are not implemented.
 
 ## Code Tools
 
@@ -197,7 +203,7 @@ Results are ranked deterministically by match count and discovery order. `start_
 
 **Agent Utilities:**
 
-Delegation, subagent messaging, cancellation, secondary-tool listing, and shell execution are declared but not implemented. Multi-agent behavior is currently supplied by pipeline composition rather than these tools.
+Delegation, subagent messaging, and recursive cancellation are implemented. Secondary-tool listing and shell execution remain declared but unimplemented.
 
 ## Tool Protocol Adapter
 
@@ -220,7 +226,7 @@ Custom endpoints expose conversion, extraction, schema/call/response building, v
 The current implementation does not yet include:
 
 - Merging or graph pipelines.
-- Implemented delegation, direct-message, broadcast, and agent-management tools on top of the pipeline-local router.
+- Broadcast messaging and broader agent-management tools.
 - Non-Python language adapters.
 - Repomap, embeddings, BM25, reranking, or prefix-cache retrieval.
 - Automatic workspace commits, rebasing, or merging.

@@ -101,6 +101,13 @@ class Session:
         except KeyError as exc:
             raise KeyError(f"Agent config {display_path!r} is not loaded") from exc
 
+    def get_config_by_name(self, subagent_name: str) -> AgentConfig:
+        """Look up the uniquely named config used for delegation."""
+        matches = [config for config in self.configs.values() if config.subagent_name == subagent_name]
+        if len(matches) != 1:
+            raise KeyError(f"Expected one config named {subagent_name!r}, found {len(matches)}")
+        return matches[0]
+
     def register_rollout(self, rollout: Rollout) -> None:
         """Register a rollout and attach it to its parent, when present."""
         if rollout.id in self.datastore and self.datastore[rollout.id] is not rollout:

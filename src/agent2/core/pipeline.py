@@ -30,8 +30,7 @@ class SingleAgentPipeline(Pipeline):
 
     async def run(self, session: Session) -> PipelineResult:
         agent = self._create_agent(session)
-        self.register_agents([agent])
-        return await self.watch_agent(agent)
+        return await self.start_agent(agent)
 
 
 class BasicMultiAgentPipeline(Pipeline):
@@ -62,9 +61,8 @@ class BasicMultiAgentPipeline(Pipeline):
             )
             for _ in range(5)
         ]
-        self.register_agents(agents)
         results = await asyncio.gather(
-            *(self.watch_agent(agent) for agent in agents),
+            *(self.start_agent(agent) for agent in agents),
             return_exceptions=True,
         )
         self.workspaces = [agent.workspace for agent in agents]
@@ -85,8 +83,7 @@ class BasicMultiAgentPipeline(Pipeline):
             session.get_config(self.judge_config_path),
             f"TASK\n{self.prompt}\n\n{choices}",
         )
-        self.register_agents([judge])
-        answer = str((await self.watch_agent(judge)).answer).strip()
+        answer = str((await self.start_agent(judge)).answer).strip()
         if answer not in {"1", "2", "3", "4", "5"}:
             raise ValueError(f"Judge returned {answer!r}; expected one number from 1 to 5")
         return int(answer)

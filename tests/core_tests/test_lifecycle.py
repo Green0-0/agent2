@@ -7,7 +7,7 @@ import pytest
 
 from agent2.core.agent import Agent
 from agent2.core.globals import CONSTRUCTORS, HOOKS, TOOLS
-from agent2.core.objects import Message, Rollout
+from agent2.core.objects import Message, Rollout, WorkspacePolicy
 from agent2.core.pipeline import BasicMultiAgentPipeline, SingleAgentPipeline
 from agent2.core.session import Session
 from agent2.core.tools.editing import (
@@ -18,6 +18,7 @@ from agent2.core.tools.editing import (
     replace_file,
     replace_lines,
 )
+from agent2.core.tools.utilities import cancel_subagent, delegate, message_subagent
 from agent2.core.tools.tool import Tool
 from agent2.core.workspace import Workspace
 
@@ -633,7 +634,7 @@ def test_agent_message_channel_is_string_only_and_cannot_target_self(tmp_path):
     assert agent.client.requests == []
 
 
-def test_pipeline_transfers_messages_only_between_its_active_agents():
+def test_pipeline_routes_only_to_its_local_active_agents():
     def live_agent(agent_id):
         received = []
 
@@ -641,6 +642,7 @@ def test_pipeline_transfers_messages_only_between_its_active_agents():
             received.append(content)
 
         return SimpleNamespace(
+            config=SimpleNamespace(subagent_name=agent_id),
             rollout=SimpleNamespace(id=agent_id),
             receive_message=receive_message,
             received=received,
@@ -651,18 +653,164 @@ def test_pipeline_transfers_messages_only_between_its_active_agents():
     sender, target, outsider = live_agent("sender"), live_agent("target"), live_agent("outsider")
     pipeline.register_agents([sender, target])
     other_pipeline.register_agents([outsider])
-    with pytest.raises(ValueError, match="another pipeline"):
-        other_pipeline.register_agents([sender])
 
     async def check():
         await pipeline.transfer_message(sender, Message("target", "hello"))
-        with pytest.raises(KeyError, match="not found in this pipeline"):
-            await pipeline.transfer_message(sender, Message("outsider", "blocked"))
-        with pytest.raises(KeyError, match="not active in this pipeline"):
-            await pipeline.transfer_message(outsider, Message("target", "blocked"))
-        with pytest.raises(ValueError, match="cannot message themselves"):
-            await pipeline.transfer_message(sender, Message("sender", "blocked"))
+        await pipeline.transfer_message(sender, Message("outsider", "ignored"))
 
     asyncio.run(check())
-    assert target.received == ["hello"]
+    assert target.received == ["Message from sender (sender):\nhello"]
     assert outsider.received == []
+
+
+def test_delegation_uses_the_child_workspace_policy(tmp_path, monkeypatch):
+    (tmp_path / "main.py").write_text("original\n", encoding="utf-8")
+    session = Session(tmp_path)
+    parent_config = session.get_config("config/agents/basic_agent.toml")
+    parent_config.primary_tools = []
+    parent_config.secondary_tools = []
+    parent = Agent(
+        session,
+        Workspace(session),
+        parent_config,
+        "parent",
+        unique_id="parent",
+        client=FakeClient([]),
+    )
+    parent.workspace.write_file("main.py", b"parent edit\n")
+    pipeline = SingleAgentPipeline(parent_config.path, "unused")
+    pipeline.register_agents([parent])
+    child_config = session.get_config_by_name("sample_agent")
+    monkeypatch.setattr("agent2.core.agent.AsyncOpenAI", lambda **kwargs: FakeClient([]))
+
+    async def check():
+        with pytest.raises(ValueError, match="not allowed"):
+            pipeline.spawn_agent(parent, "diff_judge", "judge")
+        for policy in WorkspacePolicy:
+            child_config.workspace_policy = policy
+            child_id = pipeline.spawn_agent(parent, "sample_agent", "inspect")
+            child = pipeline.active_agents[child_id]
+            if policy is WorkspacePolicy.SHARED:
+                assert child.workspace is parent.workspace
+            elif policy is WorkspacePolicy.CLONE:
+                assert child.workspace is not parent.workspace
+                assert child.workspace.read_file("main.py").current_state.bytes == b"parent edit\n"
+            else:
+                assert child.workspace is not parent.workspace
+                assert child.workspace.read_file("main.py").current_state.bytes == b"original\n"
+            await pipeline.cancel_agent(child_id)
+
+    asyncio.run(check())
+    assert set(parent.rollout.children) == set(session.datastore) - {"parent"}
+
+
+def test_delegate_idles_and_resumes_parent_until_child_finishes(tmp_path, monkeypatch):
+    delegate_call = SimpleNamespace(
+        id="delegate-1",
+        function=SimpleNamespace(
+            name="delegate",
+            arguments=json.dumps({
+                "subagent_name": "sample_agent",
+                "instructions": "Inspect the project",
+            }),
+        ),
+    )
+    parent_client = FakeClient([
+        FakeMessage(tool_calls=[delegate_call]),
+        FakeMessage(content="Waiting for the child."),
+        FakeMessage(content="Parent incorporated the result."),
+    ])
+    child_client = FakeClient([FakeMessage(content="Child result.")])
+    clients = iter((parent_client, child_client))
+    monkeypatch.setattr("agent2.core.agent.AsyncOpenAI", lambda **kwargs: next(clients))
+    session = Session(tmp_path)
+    parent_config = session.get_config("config/agents/basic_agent.toml")
+    parent_config.primary_tools = ["delegate"]
+    parent_config.secondary_tools = []
+    pipeline = SingleAgentPipeline(parent_config.path, "Use a subagent")
+
+    result = asyncio.run(pipeline.run(session))
+
+    assert result.answer == "Parent incorporated the result."
+    assert parent_client.requests[0]["tools"][0]["function"]["parameters"]["properties"]["subagent_name"]["enum"] == ["sample_agent"]
+    assert "parent agent's rollout ID" in child_client.requests[0]["messages"][-1]["content"]
+    assert len(parent_client.requests) == 3
+    assert "Subagent sample_agent" in parent_client.requests[-1]["messages"][-1]["content"]
+    parent = session.datastore[result.rollout_id]
+    assert len(parent.children) == 1
+    assert session.datastore[parent.children[0]].parent == parent.id
+    assert pipeline.active_agents == {}
+    assert pipeline.agent_tasks == {}
+
+
+def test_subagent_message_and_cancel_tools_target_direct_children(tmp_path):
+    session = Session(tmp_path)
+    config = session.get_config("config/agents/sample.toml")
+    config.primary_tools = []
+    config.secondary_tools = []
+    pipeline = SingleAgentPipeline(config.path, "unused")
+    parent = Agent(session, Workspace(session), config, "parent", unique_id="parent", client=FakeClient([]))
+    child = Agent(
+        session,
+        Workspace(session),
+        config,
+        "child",
+        unique_id="child",
+        parent_id="parent",
+        client=FakeClient([]),
+    )
+    pipeline.register_agents([parent, child])
+
+    async def check():
+        assert await message_subagent(session, parent, "hello", "child") == (
+            "Message queued for child."
+        )
+        await pipeline.transfer_message(parent, parent.outbox.get_nowait())
+        assert child.inbox.get_nowait() == "Message from sample_agent (parent):\nhello"
+        assert await message_subagent(session, child, "reply", "parent") == (
+            "Message queued for parent."
+        )
+        await pipeline.transfer_message(child, child.outbox.get_nowait())
+        assert parent.inbox.get_nowait() == "Message from sample_agent (child):\nreply"
+        assert await message_subagent(session, parent, "ignored", "missing") == (
+            "Message queued for missing."
+        )
+        await pipeline.transfer_message(parent, parent.outbox.get_nowait())
+        assert await cancel_subagent(session, parent, "missing") == "Subagent 'missing' is not active."
+
+    asyncio.run(check())
+
+
+def test_recursive_subagents_finish_from_the_leaves_up(tmp_path):
+    session = Session(tmp_path)
+    config = session.get_config("config/agents/sample.toml")
+    config.primary_tools = []
+    config.secondary_tools = []
+    parent = Agent(
+        session, Workspace(session), config, "parent", unique_id="parent",
+        client=FakeClient([FakeMessage(content="parent idle"), FakeMessage(content="parent done")]),
+    )
+    child = Agent(
+        session, Workspace(session), config, "child", unique_id="child", parent_id="parent",
+        client=FakeClient([FakeMessage(content="child idle"), FakeMessage(content="child done")]),
+    )
+    grandchild = Agent(
+        session, Workspace(session), config, "grandchild", unique_id="grandchild", parent_id="child",
+        client=FakeClient([FakeMessage(content="grandchild done")]),
+    )
+    pipeline = SingleAgentPipeline(config.path, "unused")
+
+    async def run():
+        parent_task = pipeline.start_agent(parent)
+        child_task = pipeline.start_agent(child)
+        grandchild_task = pipeline.start_agent(grandchild)
+        result = await parent_task
+        await asyncio.gather(child_task, grandchild_task)
+        return result
+
+    result = asyncio.run(run())
+    assert result.answer == "parent done"
+    assert len(parent.client.requests) == len(child.client.requests) == 2
+    assert "grandchild" in child.client.requests[-1]["messages"][-1]["content"]
+    assert "child" in parent.client.requests[-1]["messages"][-1]["content"]
+    assert pipeline.active_agents == pipeline.agent_tasks == {}

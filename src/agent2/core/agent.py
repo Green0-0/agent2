@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import os
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
 from uuid import uuid4
@@ -39,6 +40,7 @@ class Agent:
         self.pipeline: Pipeline | None = None
         self.config = config
         self.inbox: asyncio.Queue = asyncio.Queue()
+        self.inbox_ready = asyncio.Event()
         self.outbox: asyncio.Queue = asyncio.Queue()
         self.rollout: Rollout = Rollout(
             config_path=config.path,
@@ -57,6 +59,15 @@ class Agent:
             self.secondary_tools = {name: TOOLS[name] for name in config.secondary_tools}
         except KeyError as exc:
             raise ValueError(f"Unknown configured agent component: {exc.args[0]}") from exc
+        for toolset in (self.primary_tools, self.secondary_tools):
+            if "delegate" in toolset:
+                toolset["delegate"] = deepcopy(toolset["delegate"])
+                field = toolset["delegate"].openai_schema["function"]["parameters"]["properties"]["subagent_name"]
+                field["enum"] = config.subagent_names
+                field["description"] += " Available: " + "; ".join(
+                    f"{name} — {session.get_config_by_name(name).subagent_description}"
+                    for name in config.subagent_names
+                )
         self.tools = self.primary_tools.copy()
         self.pending_continuation: PendingContinuation | None = None
 
@@ -70,10 +81,12 @@ class Agent:
         if not isinstance(message, str):
             raise TypeError("Agent messages must be strings")
         await self.inbox.put(message)
+        self.inbox_ready.set()
 
     async def stop(self) -> None:
         """Stop the agent through its private control channel."""
         await self.inbox.put(_STOP)
+        self.inbox_ready.set()
 
     def followup(self, prompt: str) -> None:
         """
@@ -122,15 +135,19 @@ class Agent:
                     await self.save_rollout()
                     return None
                 inbox.append(msg)
+            if self.inbox.empty():
+                self.inbox_ready.clear()
             if self.pending_continuation:
                 for msg in inbox:
                     self.inbox.put_nowait(msg)
+                if inbox:
+                    self.inbox_ready.set()
             elif inbox:
                 content = "\n\n".join(inbox)
                 if self.rollout.raw_chat and self.rollout.raw_chat[-1].get("role") == "user":
                     self.rollout.raw_chat[-1]["content"] += f"\n\n{content}"
                 else:
-                    self.rollout.raw_chat.append({"role": "user", "content": content})
+                    self.followup(content)
                 
             # 2. Run the LLM step (do not interrupt as it wastes tokens)
             response = await self._run_llm_step()
